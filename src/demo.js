@@ -520,3 +520,130 @@ export function applyDemoChange(model) {
   copy.updated = Date.now();
   return copy;
 }
+
+export function applyLargeDemoChange(model) {
+  const copy = applyDemoChange(model);
+  for (const id of [
+    "order-api",
+    "orders",
+    "inventory",
+    "stock-store",
+    "order-store",
+    "payment",
+  ]) {
+    const n = copy.nodes.find((n) => n.id === id);
+    n.status = "modified";
+    n.change =
+      "Checkout now records inventory holds and routes confirmation through the new fulfillment flow.";
+  }
+  for (const id of ["email", "customers"]) {
+    const n = copy.nodes.find((n) => n.id === id);
+    n.status = "removed";
+    n.change =
+      "Replaced by the notification hub or identity repository. Shown for comparison only.";
+  }
+  const additions = [
+    [
+      "fulfillment",
+      "Fulfillment service",
+      "service",
+      "workflow",
+      "Coordinates shipment after an order is confirmed.",
+      "Schedule shipment",
+      ["Confirmed order"],
+      ["Shipment request"],
+    ],
+    [
+      "notification-hub",
+      "Notification hub",
+      "external",
+      "mail",
+      "Delivers order updates through a shared notification channel.",
+      "Deliver order update",
+      ["Order event"],
+      ["Delivery result"],
+    ],
+    [
+      "identity-store",
+      "Identity repository",
+      "repository",
+      "database",
+      "Stores customer identities and active sessions.",
+      "Read or save identity",
+      ["Customer or session"],
+      ["Identity record"],
+    ],
+    [
+      "audit-store",
+      "Audit repository",
+      "repository",
+      "database",
+      "Records checkout events for later investigation.",
+      "Record checkout event",
+      ["Checkout event"],
+      ["Stored event"],
+    ],
+  ];
+  for (const [
+    id,
+    title,
+    layer,
+    icon,
+    summary,
+    fn,
+    inputs,
+    outputs,
+  ] of additions) {
+    copy.nodes.push({
+      id,
+      title,
+      layer,
+      icon,
+      summary,
+      inputs,
+      outputs,
+      decisions: [],
+      effects: [],
+      functions: [fn],
+      functionDetails: [
+        {
+          id: id + "#0",
+          title: fn,
+          summary,
+          inputs,
+          outputs,
+          decisions: [],
+          effects: [],
+        },
+      ],
+      status: "added",
+      source: "demo",
+      evidence: "Curated sample",
+      change: "Added in the large-change demo.",
+    });
+  }
+  copy.edges.push(
+    ["orders", "fulfillment"],
+    ["fulfillment", "notification-hub"],
+    ["users", "identity-store"],
+    ["identity-store", "db"],
+    ["orders", "audit-store"],
+    ["audit-store", "db"],
+  );
+  copy.functionEdges.push(
+    ["orders#2", "fulfillment#0"],
+    ["fulfillment#0", "notification-hub#0"],
+    ["users#0", "identity-store#0"],
+    ["identity-store#0", "db#0"],
+    ["orders#2", "audit-store#0"],
+    ["audit-store#0", "db#1"],
+  );
+  copy.workflows[0].nodes.push(
+    "fulfillment",
+    "notification-hub",
+    "audit-store",
+  );
+  copy.workflows[1].nodes.push("identity-store");
+  for (const w of copy.workflows) w.steps = w.nodes.length;
+  return copy;
+}

@@ -97,8 +97,9 @@ const icons = {
   Mail,
   HardDrive,
 };
-import { createDemo, applyDemoChange } from "./demo.js";
+import { createDemo, applyDemoChange, applyLargeDemoChange } from "./demo.js";
 import { frameBounds, zoomStep } from "./camera.js";
+import { connectionStatus, flowDepths } from "./graph-activity.js";
 import { edgeDetails } from "./edge-details.js";
 import { functionItems } from "./function-graph.js";
 import "./style.css";
@@ -136,6 +137,7 @@ let model = createDemo(),
   liveTimer = null,
   simulationTimer = null,
   simulation = false,
+  flowStartedAt = 0,
   aiConfig = {
     url: "https://api.openai.com/v1",
     key: "",
@@ -167,14 +169,14 @@ function header() {
 }
 function sidebar() {
   const changed = model.nodes.filter((n) => n.status !== "unchanged");
-  return `<aside class="sidebar"><div class="sidebar-top"><span class="eyebrow">WORKSPACE</span><button class="map-link ${!selectedWorkflow ? "active" : ""}" id="all-map">${icon("network")} Application map <span>${model.nodes.length}</span></button></div><div class="workflow-heading"><span class="eyebrow">WORKFLOWS</span><span class="count">${model.workflows.length}</span></div><div class="workflow-list">${model.workflows.length ? model.workflows.map((w, i) => `<button class="workflow-item ${w.id === selectedWorkflow ? "selected" : ""}" data-workflow="${esc(w.id)}"><span class="workflow-icon">${icon(w.icon)}</span><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components <span>·</span> ${i === 0 ? "Core flow" : "Workflow"}</small></span>${w.id === selectedWorkflow ? icon("chevron-right") : ""}</button>`).join("") : '<p class="sidebar-note">No entry points found. Explore the application map or open a project with routes or controllers.</p>'}</div><div class="sidebar-bottom"><div class="activity-title"><span class="eyebrow">LIVE CHANGES</span><span class="live-dot ${liveTimer || simulation ? "on" : ""}"></span></div><div class="activity-card">${icon("radio")}<strong>${model.kind === "demo" ? "See a change unfold" : liveTimer ? "Watching your project" : "Your project is mapped"}</strong><p>${model.kind === "demo" ? "Preview how an agent’s changes appear on your map." : liveTimer ? "File changes are reflected automatically." : "Reopen the folder to refresh, or connect live watching in a supported browser."}</p><button id="simulate" class="activity-button">${icon(model.kind === "demo" ? "play" : "refresh-cw")}${model.kind === "demo" ? (simulation ? "Reset demo" : "Play change demo") : "Refresh project"}</button></div>${changed.length ? `<button class="change-count" id="sidebar-changes">${icon("git-branch")}${changed.length} changed components ${icon("arrow-up-right")}</button>` : ""}<div class="local-note">${icon("shield-check")} ${model.kind === "demo" ? "Explore freely. This is sample data." : "Analysis stays in your browser."}</div></div></aside>`;
+  return `<aside class="sidebar"><div class="sidebar-top"><span class="eyebrow">WORKSPACE</span><button class="map-link ${!selectedWorkflow ? "active" : ""}" id="all-map">${icon("network")} Application map <span>${model.nodes.length}</span></button></div><div class="workflow-heading"><span class="eyebrow">WORKFLOWS</span><span class="count">${model.workflows.length}</span></div><div class="workflow-list">${model.workflows.length ? model.workflows.map((w, i) => `<button class="workflow-item ${w.id === selectedWorkflow ? "selected" : ""}" data-workflow="${esc(w.id)}"><span class="workflow-icon">${icon(w.icon)}</span><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components <span>·</span> ${i === 0 ? "Core flow" : "Workflow"}</small></span>${w.id === selectedWorkflow ? icon("chevron-right") : ""}</button>`).join("") : '<p class="sidebar-note">No entry points found. Explore the application map or open a project with routes or controllers.</p>'}</div><div class="sidebar-bottom"><div class="activity-title"><span class="eyebrow">LIVE CHANGES</span><span class="live-dot ${liveTimer || simulation ? "on" : ""}"></span></div><div class="activity-card">${icon("radio")}<strong>${model.kind === "demo" ? "See a change unfold" : liveTimer ? "Watching your project" : "Your project is mapped"}</strong><p>${model.kind === "demo" ? "Preview how an agent’s changes appear on your map." : liveTimer ? "File changes are reflected automatically." : "Reopen the folder to refresh, or connect live watching in a supported browser."}</p><button id="simulate" class="activity-button">${icon(model.kind === "demo" ? "play" : "refresh-cw")}${model.kind === "demo" ? "Small change demo" : "Refresh project"}</button>${model.kind === "demo" ? `<button id="simulate-large" class="activity-button">${icon("layers")} Large change demo</button><button id="reset-demo" class="text-button">Reset demo</button><small class="demo-scale">Small: 2 components · Large: 13 components</small>` : ""}</div>${changed.length ? `<button class="change-count" id="sidebar-changes">${icon("git-branch")}${changed.length} changed components ${icon("arrow-up-right")}</button>` : ""}<div class="local-note">${icon("shield-check")} ${model.kind === "demo" ? "Explore freely. This is sample data." : "Analysis stays in your browser."}</div></div></aside>`;
 }
 function render() {
   if (selectedEdge && !edgeDetails(model, mode, ...selectedEdge))
     selectedEdge = null;
   const workflow = activeWorkflow();
   $("#app").innerHTML =
-    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} System</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Workflow highlighted" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="level-lock" aria-label="Lock detail level" aria-pressed="false"></button><span class="control-divider"></span><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("scan")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div><footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/>`;
+    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} System</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="level-lock" aria-label="Lock detail level" aria-pressed="false"></button><span class="control-divider"></span><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("scan")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div><footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/>`;
   bind();
   drawGraph();
   renderInspector();
@@ -192,6 +194,11 @@ function graphItems() {
         summary: `${model.nodes.filter((n) => n.layer === l).length} components`,
         functions: [],
         group: true,
+        status: model.nodes.some(
+          (n) => n.layer === l && n.status !== "unchanged",
+        )
+          ? "modified"
+          : "unchanged",
         x: i * 290,
         y: 100,
       }))
@@ -256,7 +263,28 @@ function drawGraph() {
     (n.parentTitle || "").toLowerCase().includes(search.toLowerCase()) ||
     n.functions.some((f) => f.toLowerCase().includes(search.toLowerCase()));
   const bright = (n) =>
-    related(n) && (!changesOnly || n.status !== "unchanged") && matches(n);
+    (related(n) || (n.status && n.status !== "unchanged")) &&
+    (!changesOnly || n.status !== "unchanged") &&
+    matches(n);
+  const depths = flowDepths(
+    items,
+    edges.filter(
+      ([a, b]) =>
+        connectionStatus(
+          model,
+          mode,
+          positions.get(a) || {},
+          positions.get(b) || {},
+        ) !== "removed",
+    ),
+    wf,
+  );
+  const flowElapsed = (performance.now() - flowStartedAt) / 1000;
+  const animateFlow =
+    !!wf &&
+    flowStartedAt > 0 &&
+    flowElapsed < (Math.max(0, ...depths.values()) + 2) * 0.85 &&
+    !matchMedia("(prefers-reduced-motion: reduce)").matches;
   const maxY = Math.max(
     500,
     ...items.map((n) => n.y + (mode === "functions" ? 260 : 145)),
@@ -280,7 +308,13 @@ function drawGraph() {
         else
           d = `M${s.x + 234} ${sy} C${s.x + 265} ${sy},${t.x - 30} ${ty},${t.x} ${ty}`;
         const active = selectedEdge?.[0] === a && selectedEdge?.[1] === b;
-        const line = `<path d="${d}" class="edge ${bright(s) && bright(t) ? "lit" : ""} ${active ? "selected" : ""}" marker-end="url(#arrow)"/>`;
+        const change = connectionStatus(model, mode, s, t);
+        const delay = ((depths.get(a) || 0) * 0.85 - flowElapsed).toFixed(2);
+        const motion =
+          animateFlow && depths.has(a) && depths.has(b) && change !== "removed"
+            ? `<path d="${d}" class="flow-packet" pathLength="100" style="animation-delay:${delay}s" aria-hidden="true"/>`
+            : "";
+        const line = `<path d="${d}" class="edge ${bright(s) && bright(t) ? "lit" : ""} ${active ? "selected" : ""} edge-${change}" marker-end="url(#arrow)"/>${motion}`;
         return mode === "overview"
           ? line
           : `<g class="edge-control" data-edge="${i}" role="button" tabindex="0" aria-label="Explain ${esc(s.title)} to ${esc(t.title)}" aria-pressed="${active}">${line}<path class="edge-hit" d="${d}" vector-effect="non-scaling-stroke"/><title>${esc(s.title)} → ${esc(t.title)}: click to understand this connection</title></g>`;
@@ -290,7 +324,7 @@ function drawGraph() {
       )}</svg>${layers.map((l, i) => `<div class="layer-label" style="left:${i * 290}px"><span>0${i + 1}</span>${layerNames[l].toUpperCase()}${icon(["arrow-right-left", "workflow", "database", "globe"][i])}</div>`).join("")}${items
       .map(
         (n) =>
-          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.group ? "SYSTEM" : n.layer.toUpperCase()}</span>${n.status === "added" ? '<span class="change-badge">NEW</span>' : n.status === "modified" ? '<span class="modified-mark"></span>' : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(n.group ? n.summary : n.summary.split(".")[0])}</p>${
+          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.group ? "SYSTEM" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(n.group ? n.summary : n.summary.split(".")[0])}</p>${
             n.isFunction
               ? ""
               : `<div class="node-footer"><span>${icon(n.group ? "box" : "braces")}${n.group ? "Explore components" : n.functions.length + " functions"}</span><span class="node-state">${n.status === "modified" ? "Updated" : n.status === "removed" ? "Removed" : n.layer === "external" ? "Connected" : "Mapped"}<b></b></span></div>`
@@ -749,6 +783,7 @@ function bind() {
     (el) =>
       (el.onclick = () => {
         selectedWorkflow = el.dataset.workflow;
+        flowStartedAt = performance.now();
         changesOnly = false;
         render();
       }),
@@ -791,30 +826,40 @@ function bind() {
     modal(
       `<span class="modal-symbol">${icon("map")}</span><h2>A map you can explore</h2><div class="help-rows"><p><strong>Follow a workflow</strong><span>Choose one on the left. Its components and connections light up.</span></p><p><strong>Change your perspective</strong><span>Switch between systems, components, and functions. Scroll to zoom, or drag the canvas to pan.</span></p><p><strong>Understand behavior</strong><span>Select a component or function for inputs, outcomes, decisions, and side effects.</span></p><p><strong>Follow changes</strong><span>Connect a local folder for live updates, or play the clearly labeled sample change.</span></p></div>`,
     );
+  const playDemo = (size) => {
+    clearTimeout(simulationTimer);
+    simulation = true;
+    selectedNode = selectedFn = selectedEdge = null;
+    changesOnly = false;
+    model =
+      size === "large"
+        ? applyLargeDemoChange(createDemo())
+        : applyDemoChange(createDemo());
+    render();
+    fitGraph();
+    toast(
+      size === "large"
+        ? "Large demo: 5 added · 6 updated · 2 removed components."
+        : "Small demo: 1 added · 1 updated component.",
+    );
+  };
+  $("#simulate-large")?.addEventListener("click", () => playDemo("large"));
+  $("#reset-demo")?.addEventListener("click", () => {
+    clearTimeout(simulationTimer);
+    model = createDemo();
+    simulation = false;
+    selectedNode = selectedFn = selectedEdge = null;
+    changesOnly = false;
+    render();
+    fitGraph();
+  });
   $("#simulate").onclick = () => {
     if (model.kind !== "demo") {
       if (folderHandle) scanFolder(true);
       else showConnect();
       return;
     }
-    if (simulation) {
-      clearTimeout(simulationTimer);
-      model = createDemo();
-      simulation = false;
-      selectedNode = null;
-      render();
-      fitGraph();
-      return;
-    }
-    simulation = true;
-    toast("Demo: the agent is adding a duplicate-checkout guard…");
-    render();
-    simulationTimer = setTimeout(() => {
-      model = applyDemoChange(model);
-      render();
-      fitGraph();
-      toast("Demo complete: Order service modified · Checkout guard added.");
-    }, 1800);
+    playDemo("small");
   };
   $("#folder-input").onchange = async (e) => {
     const files = [...e.target.files];

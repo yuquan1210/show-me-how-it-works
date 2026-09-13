@@ -1,4 +1,5 @@
 import ts from "typescript";
+import { edgeKey } from "./graph-activity.js";
 const excluded =
   /(^|\/)(node_modules|\.git|dist|build|coverage|__tests__|tests?|\.next|vendor)(\/|$)|\.(test|spec|config)\.[cm]?[jt]sx?$|\.d\.ts$/i;
 export const isSource = (path) =>
@@ -345,6 +346,27 @@ export function analyzeFiles(files, name = "My application") {
   };
 }
 export function diffModels(before, after) {
+  for (const [field, statusField] of [
+    ["edges", "edgeChanges"],
+    ["functionEdges", "functionEdgeChanges"],
+  ]) {
+    const oldEdges = (before[field] || []).filter(
+      ([a, b]) => before[statusField]?.[edgeKey(a, b)] !== "removed",
+    );
+    const newEdges = after[field] || [];
+    const oldKeys = new Set(oldEdges.map(([a, b]) => edgeKey(a, b)));
+    const newKeys = new Set(newEdges.map(([a, b]) => edgeKey(a, b)));
+    after[statusField] = {};
+    for (const [a, b] of newEdges)
+      if (!oldKeys.has(edgeKey(a, b)))
+        after[statusField][edgeKey(a, b)] = "added";
+    after[field] = [...newEdges];
+    for (const [a, b] of oldEdges)
+      if (!newKeys.has(edgeKey(a, b))) {
+        after[field].push([a, b]);
+        after[statusField][edgeKey(a, b)] = "removed";
+      }
+  }
   const previous = new Map(before.nodes.map((n) => [n.id, n]));
   for (const n of after.nodes) {
     const old = previous.get(n.id);
@@ -355,9 +377,28 @@ export function diffModels(before, after) {
         : "unchanged";
     if (n.status === "modified")
       n.change = "Implementation changed since the previous scan.";
+    const previousFunctions = new Map(
+      (old?.functionDetails || [])
+        .filter((f) => f.status !== "removed")
+        .map((f) => [f.id, f]),
+    );
+    for (const fn of n.functionDetails) {
+      const prior = previousFunctions.get(fn.id);
+      fn.status = !prior
+        ? "added"
+        : prior.raw !== fn.raw
+          ? "modified"
+          : "unchanged";
+    }
+    for (const fn of previousFunctions.values()) {
+      if (!n.functionDetails.some((f) => f.id === fn.id)) {
+        n.functionDetails.push({ ...fn, status: "removed" });
+        n.functions.push(fn.title);
+      }
+    }
   }
   for (const n of before.nodes)
-    if (!after.nodes.some((x) => x.id === n.id))
+    if (n.status !== "removed" && !after.nodes.some((x) => x.id === n.id))
       after.nodes.push({
         ...n,
         status: "removed",

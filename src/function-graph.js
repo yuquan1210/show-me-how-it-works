@@ -13,7 +13,8 @@ export function functionItems(model, layers) {
         functionIndex,
         isFunction: true,
         layer: parent.layer,
-        status: parent.status,
+        status:
+          parent.status === "removed" ? "removed" : fn.status || parent.status,
         icon: "braces",
         functions: [],
         x: layers.indexOf(parent.layer) * 290,

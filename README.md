@@ -24,6 +24,8 @@ npm run build # Build static files into dist/
 
 - Switch between **System**, **Components**, and **Functions**. Each extracted named function has its own selectable node.
 - Select a workflow to highlight related logic. Drag to pan and scroll to zoom.
+- Selecting a workflow plays a one-pass, entry-to-end flow animation (illustrative, not a runtime trace). Reduced-motion preferences are respected.
+- Try **Small change demo** (2 components) or **Large change demo** (13 components). Added nodes/connections are green, updated or affected ones amber, and removed ones pink and dashed. Reset restores the original sample.
 - Use the **lock button** beside the zoom controls to keep the detail level fixed while zooming. The level tabs still work manually.
 - Select a node to inspect inputs, outputs, decisions, and side effects.
 - Click a connection in Components or Functions to inspect its purpose, calls, and callee inputs/results. Imported purposes are inferred; import-only dependencies are labeled as unknown. System connections are not selectable.

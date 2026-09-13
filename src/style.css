@@ -579,6 +579,59 @@ kbd {
 .edge-control:focus {
   outline: none;
 }
+.edge.edge-added {
+  stroke: #57f5ae;
+  stroke-width: 4;
+  opacity: 1;
+}
+.edge.edge-affected {
+  stroke: #ffc35d;
+  stroke-width: 3.5;
+  opacity: 1;
+}
+.edge.edge-removed {
+  stroke: #ff7d91;
+  stroke-width: 3.5;
+  stroke-dasharray: 7 5;
+  opacity: 0.95;
+}
+.flow-packet {
+  fill: none;
+  stroke: #dbfaff;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 8 92;
+  stroke-dashoffset: 8;
+  opacity: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 5px #52d6ff);
+  animation: travel-flow 0.85s linear forwards;
+}
+@keyframes travel-flow {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 8;
+  }
+  8% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: -100;
+  }
+}
+.activity-card .activity-button + .activity-button {
+  margin-top: 8px;
+}
+.demo-scale {
+  display: block;
+  color: #a7b8c2;
+  font-size: 12px;
+  line-height: 1.5;
+}
 .graph-node {
   position: absolute;
   width: 234px;
@@ -646,6 +699,56 @@ kbd {
   border-color: #bc7a76;
   border-style: dashed;
   opacity: 0.6;
+}
+.graph-node.added,
+.graph-node.added.dimmed {
+  opacity: 1;
+  border: 2px solid #57f5ae;
+  background: #163c30;
+  box-shadow:
+    0 0 0 3px #57f5ae30,
+    0 0 24px #57f5ae30;
+}
+.graph-node.modified,
+.graph-node.modified.dimmed {
+  opacity: 1;
+  border: 2px solid #ffc35d;
+  background: #3b3020;
+  box-shadow:
+    0 0 0 3px #ffc35d30,
+    0 0 24px #ffc35d25;
+}
+.graph-node.removed,
+.graph-node.removed.dimmed {
+  opacity: 0.95;
+  border: 2px dashed #ff7d91;
+  background: #3c232c;
+  box-shadow: 0 0 0 3px #ff7d9125;
+}
+.graph-node.removed h2 {
+  text-decoration: line-through;
+}
+.graph-node .change-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 750;
+  padding: 3px 5px;
+  color: #071810;
+  background: #57f5ae;
+}
+.graph-node.modified .change-badge {
+  background: #ffc35d;
+  color: #241500;
+}
+.graph-node.removed .change-badge {
+  background: #ff7d91;
+  color: #29060f;
+}
+@media (prefers-reduced-motion: reduce) {
+  .flow-packet {
+    display: none;
+    animation: none;
+  }
 }
 .node-top {
   display: flex;
