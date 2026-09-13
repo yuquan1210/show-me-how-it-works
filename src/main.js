@@ -100,6 +100,7 @@ const icons = {
 import { createDemo, applyDemoChange, applyLargeDemoChange } from "./demo.js";
 import { frameBounds, zoomStep } from "./camera.js";
 import { connectionStatus, flowDepths } from "./graph-activity.js";
+import { layoutGraph, systemGraph } from "./graph-layout.js";
 import { edgeDetails } from "./edge-details.js";
 import { functionItems } from "./function-graph.js";
 import "./style.css";
@@ -182,41 +183,25 @@ function render() {
   renderInspector();
   uiIcons();
 }
+const layoutPositions = new Map();
 function graphItems() {
-  if (mode === "functions") return functionItems(model, layers);
-  if (mode === "overview") {
-    return layers
-      .map((l, i) => ({
-        id: "layer:" + l,
-        title: layerNames[l],
-        layer: l,
-        icon: ["log-in", "workflow", "database", "cloud"][i],
-        summary: `${model.nodes.filter((n) => n.layer === l).length} components`,
-        functions: [],
-        group: true,
-        status: model.nodes.some(
-          (n) => n.layer === l && n.status !== "unchanged",
-        )
-          ? "modified"
-          : "unchanged",
-        x: i * 290,
-        y: 100,
-      }))
-      .filter((n) => model.nodes.some((x) => x.layer === n.layer));
-  }
-  const positions = new Map();
-  const rowCounts = {};
-  return model.nodes.map((n) => {
-    const row = rowCounts[n.layer] ?? 0;
-    rowCounts[n.layer] = row + 1;
-    const index = layers.indexOf(n.layer);
-    const pos = {
-      x: index * 290,
-      y: row * (mode === "functions" ? 285 : 176) + 68,
-    };
-    positions.set(n.id, pos);
-    return { ...n, ...pos };
+  const graph =
+    mode === "overview"
+      ? systemGraph(model)
+      : {
+          items:
+            mode === "functions" ? functionItems(model, layers) : model.nodes,
+          edges: mode === "functions" ? model.functionEdges || [] : model.edges,
+        };
+  const items = layoutGraph(graph.items, graph.edges, {
+    compact: mode === "functions",
+    previous: layoutPositions.get(mode) || new Map(),
   });
+  layoutPositions.set(
+    mode,
+    new Map(items.map((n) => [n.id, { x: n.x, y: n.y }])),
+  );
+  return items;
 }
 function drawGraph() {
   const items = graphItems(),
@@ -236,26 +221,12 @@ function drawGraph() {
   );
   $("#empty-search").textContent = `No matching ${entityLabel}`;
   let edges = mode === "functions" ? model.functionEdges || [] : model.edges;
-  if (mode === "overview") {
-    edges = [
-      ...new Set(
-        model.edges
-          .map(([a, b]) => {
-            const x = model.nodes.find((n) => n.id === a),
-              y = model.nodes.find((n) => n.id === b);
-            return x && y && x.layer !== y.layer
-              ? `layer:${x.layer}|layer:${y.layer}`
-              : "";
-          })
-          .filter(Boolean),
-      ),
-    ].map((s) => s.split("|"));
-  }
+  if (mode === "overview") edges = systemGraph(model).edges;
   const wf = activeWorkflow();
   const related = (n) =>
     n.group
       ? model.nodes.some(
-          (m) => m.layer === n.layer && (!wf || wf.nodes.includes(m.id)),
+          (m) => n.members.includes(m.id) && (!wf || wf.nodes.includes(m.id)),
         )
       : !wf || wf.nodes.includes(n.parentId || n.id);
   const matches = (n) =>
@@ -289,24 +260,27 @@ function drawGraph() {
     500,
     ...items.map((n) => n.y + (mode === "functions" ? 260 : 145)),
   );
-  $("#world").style.width = "1120px";
+  const maxX = Math.max(500, ...items.map((n) => n.x + 285));
+  $("#world").style.width = maxX + "px";
   $("#world").style.height = maxY + "px";
   $("#world").innerHTML =
-    `<svg class="connections" width="1150" height="${maxY}" aria-hidden="${mode === "overview"}"><defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
+    `<svg class="connections" width="${maxX}" height="${maxY}" aria-hidden="${mode === "overview"}"><defs><marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="9.8" markerHeight="9.8" viewBox="0 0 7 7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
       .map(([a, b], i) => {
         const s = positions.get(a),
           t = positions.get(b);
         if (!s || !t) return "";
         const sy = s.y + 58,
-          ty = t.y + 58,
-          same = s.x === t.x;
+          ty = t.y + 58;
         let d;
-        if (same)
-          d = `M${s.x + 234} ${sy} C${s.x + 265} ${sy},${t.x + 265} ${ty},${t.x + 234} ${ty}`;
-        else if (t.x < s.x)
-          d = `M${s.x} ${sy} C${s.x - 28} ${sy},${t.x + 266} ${ty},${t.x + 234} ${ty}`;
-        else
-          d = `M${s.x + 234} ${sy} C${s.x + 265} ${sy},${t.x - 30} ${ty},${t.x} ${ty}`;
+        if (s.y === t.y && Math.abs(t.x - s.x) <= 300 && t.x !== s.x) {
+          const forward = t.x > s.x;
+          d = forward
+            ? `M${s.x + 234} ${sy} C${s.x + 266} ${sy},${t.x - 32} ${ty},${t.x} ${ty}`
+            : `M${s.x} ${sy} C${s.x - 32} ${sy},${t.x + 266} ${ty},${t.x + 234} ${ty}`;
+        } else {
+          const channel = Math.min(s.y, t.y) - 15;
+          d = `M${s.x + 234} ${sy} L${s.x + 264} ${sy} L${s.x + 264} ${channel} L${t.x + 270} ${channel} L${t.x + 270} ${ty} L${t.x + 234} ${ty}`;
+        }
         const active = selectedEdge?.[0] === a && selectedEdge?.[1] === b;
         const change = connectionStatus(model, mode, s, t);
         const delay = ((depths.get(a) || 0) * 0.85 - flowElapsed).toFixed(2);
@@ -319,9 +293,7 @@ function drawGraph() {
           ? line
           : `<g class="edge-control" data-edge="${i}" role="button" tabindex="0" aria-label="Explain ${esc(s.title)} to ${esc(t.title)}" aria-pressed="${active}">${line}<path class="edge-hit" d="${d}" vector-effect="non-scaling-stroke"/><title>${esc(s.title)} → ${esc(t.title)}: click to understand this connection</title></g>`;
       })
-      .join(
-        "",
-      )}</svg>${layers.map((l, i) => `<div class="layer-label" style="left:${i * 290}px"><span>0${i + 1}</span>${layerNames[l].toUpperCase()}${icon(["arrow-right-left", "workflow", "database", "globe"][i])}</div>`).join("")}${items
+      .join("")}</svg>${items
       .map(
         (n) =>
           `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.group ? "SYSTEM" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(n.group ? n.summary : n.summary.split(".")[0])}</p>${
@@ -355,7 +327,7 @@ function drawGraph() {
   document.querySelectorAll("[data-node]").forEach((el) => {
     const open = () => {
       const id = el.dataset.node;
-      if (id.startsWith("layer:")) {
+      if (positions.get(id)?.group) {
         setDetailLevel("architecture");
       } else {
         const item = positions.get(id);
@@ -667,6 +639,7 @@ function showConnect() {
   $("#snapshot-folder").onclick = () => $("#folder-input").click();
   $("#load-demo").onclick = () => {
     stopWatching();
+    layoutPositions.clear();
     model = createDemo();
     selectedWorkflow = "checkout";
     selectedNode = null;
@@ -713,6 +686,7 @@ async function installProject(files, name, watch = false) {
     );
     return false;
   }
+  if (!watch) layoutPositions.clear();
   model = watch ? diffModels(model, next) : next;
   if (!watch) selectedEdge = null;
   aiCache.clear();

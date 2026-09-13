@@ -17,7 +17,9 @@ export function flowDepths(items, edges, workflow) {
   const visible = items.filter(
     (n) =>
       n.status !== "removed" &&
-      (!workflow || workflow.nodes.includes(n.parentId || n.id) || n.group),
+      (!workflow ||
+        workflow.nodes.includes(n.parentId || n.id) ||
+        (n.group && n.members?.some((id) => workflow.nodes.includes(id)))),
   );
   const ids = new Set(visible.map((n) => n.id));
   const links = edges.filter(([a, b]) => ids.has(a) && ids.has(b));
