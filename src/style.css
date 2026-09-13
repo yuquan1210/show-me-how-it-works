@@ -552,6 +552,53 @@ kbd {
   overflow: visible;
   pointer-events: none;
 }
+.component-boundary {
+  position: absolute;
+  border: 1px solid #536a75;
+  border-radius: 14px;
+  background: #19252b80;
+  pointer-events: none;
+}
+.component-boundary > span {
+  display: block;
+  padding: 12px 24px;
+  color: #b5c8d0;
+  font-size: 13px;
+}
+.context-box {
+  position: absolute;
+  padding: 12px 18px;
+  border: 1px dashed #617583;
+  border-radius: 8px;
+  background: #202c33;
+  color: #c8d9e1;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+.context-box svg {
+  width: 16px;
+  height: 16px;
+}
+.world.tracing .edge-control:not(.traced) {
+  opacity: 0.09;
+}
+.world.tracing .graph-node:not(.trace-node) {
+  opacity: 0.22;
+  box-shadow: none;
+}
+.world.tracing .graph-node.trace-node {
+  opacity: 1;
+  border-color: #d8f5ff;
+  box-shadow: 0 0 0 3px #92ddff50;
+}
+.world .edge-control.traced .edge {
+  stroke: #d8f5ff;
+  opacity: 1;
+  stroke-width: 3;
+}
 .edge {
   fill: none;
   stroke: #34433d;

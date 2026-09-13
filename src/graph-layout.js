@@ -1,80 +1,214 @@
-// Technical layers describe nodes; they do not dictate their position.
+// Layered dependency layout with bounded stage height and barycentric ordering.
 export function layoutGraph(
   items,
   edges,
   { compact = false, previous = new Map() } = {},
 ) {
+  if (!items.length) return [];
+  // Reuse a complete view while highlighting, inspecting, or applying metadata changes.
+  if (items.every((n) => previous.has(n.id)) && previous.size === items.length)
+    return items.map((n) => ({ ...n, ...previous.get(n.id) }));
   const ids = new Set(items.map((n) => n.id));
-  const incoming = new Map(items.map((n) => [n.id, 0]));
+  const incoming = new Map(items.map((n) => [n.id, []]));
   const outgoing = new Map(items.map((n) => [n.id, []]));
   for (const [a, b] of edges)
     if (ids.has(a) && ids.has(b) && a !== b) {
-      incoming.set(b, incoming.get(b) + 1);
+      incoming.get(b).push(a);
       outgoing.get(a).push(b);
     }
-  const byId = new Map(items.map((n) => [n.id, n]));
-  const compare = (a, b) => {
-    const x = byId.get(a),
-      y = byId.get(b);
-    return (
-      (x.parentId || "").localeCompare(y.parentId || "") || a.localeCompare(b)
-    );
-  };
-  const queue = items
-    .filter((n) => !incoming.get(n.id))
-    .map((n) => n.id)
-    .sort(compare);
-  const ordered = [],
-    seen = new Set();
-  while (ordered.length < items.length) {
-    if (!queue.length)
-      queue.push(
-        items
-          .map((n) => n.id)
-          .filter((id) => !seen.has(id))
-          .sort(compare)[0],
-      );
+  const degree = new Map(items.map((n) => [n.id, incoming.get(n.id).length]));
+  const rank = new Map(items.map((n) => [n.id, 0])),
+    visited = new Set();
+  const queue = items.filter((n) => !degree.get(n.id)).map((n) => n.id);
+  while (visited.size < items.length) {
+    if (!queue.length) queue.push(items.find((n) => !visited.has(n.id)).id);
     const id = queue.shift();
-    if (seen.has(id)) continue;
-    seen.add(id);
-    ordered.push(byId.get(id));
-    for (const next of outgoing.get(id)) {
-      incoming.set(next, incoming.get(next) - 1);
-      if (!incoming.get(next)) queue.push(next);
-    }
+    if (visited.has(id)) continue;
+    visited.add(id);
+    for (const b of outgoing.get(id))
+      if (!visited.has(b)) {
+        rank.set(b, Math.max(rank.get(b), rank.get(id) + 1));
+        degree.set(b, degree.get(b) - 1);
+        if (!degree.get(b)) queue.push(b);
+      }
   }
-  const rowHeight = compact ? 148 : 194;
-  const columns = Math.max(
-    1,
-    Math.ceil(Math.sqrt((items.length * rowHeight * 1.6) / 300)),
-  );
-  const occupied = new Set();
-  const positions = new Map();
-  // Preserve existing boxes, including removed comparison boxes. New boxes use free slots.
-  for (const n of items)
-    if (previous.has(n.id)) {
-      const pos = previous.get(n.id);
-      positions.set(n.id, pos);
-      occupied.add(`${pos.x},${pos.y}`);
-    }
-  let slot = 0;
-  for (const n of ordered) {
-    if (positions.has(n.id)) continue;
-    let pos;
-    do {
-      const row = Math.floor(slot / columns),
-        column = slot % columns;
-      // Snake ordering keeps the end of one row near the start of the next.
-      pos = {
-        x: (row % 2 ? columns - column - 1 : column) * 300,
-        y: 36 + row * rowHeight,
+  const stages = [];
+  for (const n of items) (stages[rank.get(n.id)] ||= []).push(n);
+  const order = new Map();
+  for (const stage of stages) stage?.forEach((n, i) => order.set(n.id, i));
+  for (let sweep = 0; sweep < 4; sweep++) {
+    const forward = sweep % 2 === 0;
+    const indices = stages.map((_, i) => i);
+    if (!forward) indices.reverse();
+    for (const i of indices) {
+      const stage = stages[i];
+      if (!stage) continue;
+      const bary = (n) => {
+        const neighbors = (forward ? incoming : outgoing).get(n.id);
+        return neighbors.length
+          ? neighbors.reduce((s, id) => s + (order.get(id) || 0), 0) /
+              neighbors.length
+          : order.get(n.id) || 0;
       };
-      slot++;
-    } while (occupied.has(`${pos.x},${pos.y}`));
-    positions.set(n.id, pos);
-    occupied.add(`${pos.x},${pos.y}`);
+      stage.sort((a, b) => bary(a) - bary(b));
+      stage.forEach((n, j) => order.set(n.id, j));
+    }
   }
-  return items.map((n) => ({ ...n, ...positions.get(n.id) }));
+  const maxRows = Math.max(3, Math.ceil(Math.sqrt(items.length)));
+  const defaultHeight = compact ? 116 : 172;
+  const stageData = stages.filter(Boolean).map((stage) => {
+    const columns = Math.ceil(stage.length / maxRows),
+      rows = Math.ceil(stage.length / columns);
+    const cellWidth = Math.max(...stage.map((n) => n.width || 234));
+    const cellHeight = Math.max(...stage.map((n) => n.height || defaultHeight));
+    return {
+      stage,
+      columns,
+      rows,
+      cellWidth,
+      cellHeight,
+      height: rows * (cellHeight + 44) - 44,
+    };
+  });
+  const totalHeight = Math.max(...stageData.map((s) => s.height));
+  let x = 24;
+  const result = new Map();
+  for (const s of stageData) {
+    s.stage.forEach((n, i) =>
+      result.set(n.id, {
+        ...n,
+        x: x + Math.floor(i / s.rows) * (s.cellWidth + 70),
+        y:
+          54 +
+          (totalHeight - s.height) / 2 +
+          (i % s.rows) * (s.cellHeight + 44),
+      }),
+    );
+    x += s.columns * (s.cellWidth + 70) + 40;
+  }
+  return items.map((n) => result.get(n.id));
+}
+
+export function functionLayout(items, edges, options = {}) {
+  const groups = new Map();
+  for (const fn of items) {
+    if (!groups.has(fn.parentId))
+      groups.set(fn.parentId, {
+        id: fn.parentId,
+        title: fn.parentTitle,
+        children: [],
+      });
+    groups.get(fn.parentId).children.push(fn);
+  }
+  const owners = new Map(items.map((n) => [n.id, n.parentId]));
+  const links = [
+    ...new Map(
+      edges.flatMap(([a, b]) => {
+        const x = owners.get(a),
+          y = owners.get(b);
+        return x && y && x !== y ? [[JSON.stringify([x, y]), [x, y]]] : [];
+      }),
+    ).values(),
+  ];
+  const parents = [...groups.values()].map((g) => {
+    const columns = g.children.length > 4 ? 2 : 1;
+    return {
+      ...g,
+      columns,
+      width: columns * 260 + 24,
+      height: Math.ceil(g.children.length / columns) * 140 + 48,
+    };
+  });
+  const laid = layoutGraph(parents, links);
+  return {
+    items: laid.flatMap((g) =>
+      g.children.map((n, i) => ({
+        ...n,
+        x: g.x + 24 + (i % g.columns) * 260,
+        y: g.y + 40 + Math.floor(i / g.columns) * 140,
+      })),
+    ),
+    groups: laid,
+  };
+}
+
+export function focusGraph(graph, workflow) {
+  if (!workflow) return { ...graph, hidden: 0 };
+  const items = graph.items.filter((n) =>
+    n.group
+      ? n.members.some((id) => workflow.nodes.includes(id))
+      : workflow.nodes.includes(n.parentId || n.id),
+  );
+  const ids = new Set(items.map((n) => n.id));
+  return {
+    items,
+    edges: graph.edges.filter(([a, b]) => ids.has(a) && ids.has(b)),
+    hidden: graph.items.length - items.length,
+  };
+}
+
+// Use the shortest clear orthogonal candidate; route long skips through free gutters.
+export function routeEdge(source, target, items, { compact = false } = {}) {
+  const sx = source.x + 234,
+    sy = source.y + 58,
+    tx = target.x,
+    ty = target.y + 58;
+  const obstacles = items
+    .filter((n) => n.id !== source.id && n.id !== target.id)
+    .map((n) => ({
+      left: n.x - 8,
+      right: n.x + 242,
+      top: n.y - 8,
+      bottom: n.y + (compact ? 116 : 172) + 8,
+    }));
+  const clear = (points) =>
+    points.slice(1).every((b, i) => {
+      const a = points[i];
+      return !obstacles.some((r) =>
+        a[0] === b[0]
+          ? a[0] > r.left &&
+            a[0] < r.right &&
+            Math.max(a[1], b[1]) > r.top &&
+            Math.min(a[1], b[1]) < r.bottom
+          : a[1] > r.top &&
+            a[1] < r.bottom &&
+            Math.max(a[0], b[0]) > r.left &&
+            Math.min(a[0], b[0]) < r.right,
+      );
+    });
+  const candidates = [];
+  if (tx > sx)
+    candidates.push([
+      [sx, sy],
+      [(sx + tx) / 2, sy],
+      [(sx + tx) / 2, ty],
+      [tx, ty],
+    ]);
+  const lanes = [
+    Math.min(source.y, target.y) - 20,
+    ...items.flatMap((n) => [n.y - 20, n.y + (compact ? 116 : 172) + 20]),
+  ];
+  for (const y of lanes)
+    candidates.push([
+      [sx, sy],
+      [sx + 20, sy],
+      [sx + 20, y],
+      [tx - 20, y],
+      [tx - 20, ty],
+      [tx, ty],
+    ]);
+  const valid = candidates.filter(clear);
+  const length = (p) =>
+    p
+      .slice(1)
+      .reduce(
+        (sum, b, i) =>
+          sum + Math.abs(b[0] - p[i][0]) + Math.abs(b[1] - p[i][1]),
+        0,
+      );
+  valid.sort((a, b) => length(a) - length(b));
+  const points = valid[0] || candidates.at(-1);
+  return points.map((p, i) => (i ? "L" : "M") + p.join(" ")).join(" ");
 }
 
 const technical =

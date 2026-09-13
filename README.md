@@ -23,8 +23,9 @@ npm run build # Build static files into dist/
 ## Explore the app
 
 - Switch between **System**, **Components**, and **Functions**. Each extracted named function has its own selectable node.
-- System boxes group application areas (inferred from paths for imported projects). Components and functions use a compact dependency-ordered layout, not fixed technical-layer columns. Existing positions are preserved when changes appear or workflows are highlighted.
-- Select a workflow to highlight related logic. Drag to pan and scroll to zoom.
+- System boxes group application areas (inferred from paths for imported projects). Components follow left-to-right dependency stages; functions remain individually selectable within component boundaries. Highlighting and inspection preserve positions; changing workflow focus or graph structure can reflow the layout.
+- Select a workflow to focus its graph and collapse unrelated areas into a context box. Choose **All workflows** to restore the overview. Drag to pan and scroll to zoom.
+- Hover or select a connection to trace its complete path and both endpoints while other paths fade.
 - Selecting a workflow plays a one-pass, entry-to-end flow animation (illustrative, not a runtime trace). Reduced-motion preferences are respected.
 - Try **Small change demo** (2 components) or **Large change demo** (13 components). Added nodes/connections are green, updated or affected ones amber, and removed ones pink and dashed. Reset restores the original sample.
 - Use the **lock button** beside the zoom controls to keep the detail level fixed while zooming. The level tabs still work manually.

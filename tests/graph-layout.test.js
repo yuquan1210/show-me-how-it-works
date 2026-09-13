@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { layoutGraph, systemGraph } from "../src/graph-layout.js";
+import {
+  layoutGraph,
+  systemGraph,
+  functionLayout,
+  focusGraph,
+  routeEdge,
+} from "../src/graph-layout.js";
 import { createDemo, applyLargeDemoChange } from "../src/demo.js";
 
 test("a skewed service-only project packs across rows and columns", () => {
@@ -13,7 +19,7 @@ test("a skewed service-only project packs across rows and columns", () => {
   assert.ok(new Set(layout.map((n) => n.y)).size < 12);
   assert.equal(new Set(layout.map((n) => `${n.x},${n.y}`)).size, 48);
 });
-test("dependencies are ordered, cycles terminate, and additions preserve positions", () => {
+test("dependencies are ordered, cycles terminate, and highlighting preserves positions", () => {
   const items = [{ id: "end" }, { id: "middle" }, { id: "entry" }];
   const layout = layoutGraph(items, [
     ["entry", "middle"],
@@ -24,12 +30,59 @@ test("dependencies are ordered, cycles terminate, and additions preserve positio
   const added = layoutGraph([...items, { id: "new" }], [["end", "entry"]], {
     previous: pos,
   });
-  for (const n of layout)
-    assert.deepEqual(
-      added.find((m) => m.id === n.id),
-      n,
-    );
+  const same = layoutGraph(
+    items,
+    [
+      ["entry", "middle"],
+      ["middle", "end"],
+    ],
+    { previous: pos },
+  );
+  assert.deepEqual(same, layout);
   assert.equal(new Set(added.map((n) => `${n.x},${n.y}`)).size, 4);
+});
+
+test("workflow focus collapses unrelated nodes and removes their connections", () => {
+  const model = createDemo();
+  const result = focusGraph(
+    { items: model.nodes, edges: model.edges },
+    model.workflows[0],
+  );
+  assert.equal(result.items.length, 8);
+  assert.equal(result.hidden, 4);
+  assert.ok(
+    result.edges.every(
+      ([a, b]) =>
+        result.items.some((n) => n.id === a) &&
+        result.items.some((n) => n.id === b),
+    ),
+  );
+});
+
+test("function boundaries contain separate nodes without overlap", () => {
+  const items = Array.from({ length: 9 }, (_, i) => ({
+    id: `f${i}`,
+    parentId: i < 6 ? "a" : "b",
+    parentTitle: i < 6 ? "A" : "B",
+  }));
+  const result = functionLayout(items, [["f0", "f6"]]);
+  assert.equal(result.groups.length, 2);
+  assert.equal(result.items.length, 9);
+  for (const n of result.items) {
+    const g = result.groups.find((g) => g.id === n.parentId);
+    assert.ok(n.x >= g.x && n.x + 234 <= g.x + g.width);
+    assert.ok(n.y >= g.y && n.y + 116 <= g.y + g.height);
+  }
+});
+
+test("long connections route around an intervening card", () => {
+  const a = { id: "a", x: 24, y: 54 },
+    b = { id: "b", x: 712, y: 54 },
+    obstacle = { id: "c", x: 368, y: 54 };
+  const d = routeEdge(a, b, [a, obstacle, b]);
+  assert.ok(d.includes(" 34"), d);
+  assert.ok(d.startsWith("M258 112"));
+  assert.ok(d.endsWith("712 112"));
 });
 test("system view groups application areas rather than imposing technical layers", () => {
   const graph = systemGraph(createDemo());

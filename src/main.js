@@ -100,7 +100,13 @@ const icons = {
 import { createDemo, applyDemoChange, applyLargeDemoChange } from "./demo.js";
 import { frameBounds, zoomStep } from "./camera.js";
 import { connectionStatus, flowDepths } from "./graph-activity.js";
-import { layoutGraph, systemGraph } from "./graph-layout.js";
+import {
+  layoutGraph,
+  systemGraph,
+  functionLayout,
+  focusGraph,
+  routeEdge,
+} from "./graph-layout.js";
 import { edgeDetails } from "./edge-details.js";
 import { functionItems } from "./function-graph.js";
 import "./style.css";
@@ -170,7 +176,7 @@ function header() {
 }
 function sidebar() {
   const changed = model.nodes.filter((n) => n.status !== "unchanged");
-  return `<aside class="sidebar"><div class="sidebar-top"><span class="eyebrow">WORKSPACE</span><button class="map-link ${!selectedWorkflow ? "active" : ""}" id="all-map">${icon("network")} Application map <span>${model.nodes.length}</span></button></div><div class="workflow-heading"><span class="eyebrow">WORKFLOWS</span><span class="count">${model.workflows.length}</span></div><div class="workflow-list">${model.workflows.length ? model.workflows.map((w, i) => `<button class="workflow-item ${w.id === selectedWorkflow ? "selected" : ""}" data-workflow="${esc(w.id)}"><span class="workflow-icon">${icon(w.icon)}</span><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components <span>·</span> ${i === 0 ? "Core flow" : "Workflow"}</small></span>${w.id === selectedWorkflow ? icon("chevron-right") : ""}</button>`).join("") : '<p class="sidebar-note">No entry points found. Explore the application map or open a project with routes or controllers.</p>'}</div><div class="sidebar-bottom"><div class="activity-title"><span class="eyebrow">LIVE CHANGES</span><span class="live-dot ${liveTimer || simulation ? "on" : ""}"></span></div><div class="activity-card">${icon("radio")}<strong>${model.kind === "demo" ? "See a change unfold" : liveTimer ? "Watching your project" : "Your project is mapped"}</strong><p>${model.kind === "demo" ? "Preview how an agent’s changes appear on your map." : liveTimer ? "File changes are reflected automatically." : "Reopen the folder to refresh, or connect live watching in a supported browser."}</p><button id="simulate" class="activity-button">${icon(model.kind === "demo" ? "play" : "refresh-cw")}${model.kind === "demo" ? "Small change demo" : "Refresh project"}</button>${model.kind === "demo" ? `<button id="simulate-large" class="activity-button">${icon("layers")} Large change demo</button><button id="reset-demo" class="text-button">Reset demo</button><small class="demo-scale">Small: 2 components · Large: 13 components</small>` : ""}</div>${changed.length ? `<button class="change-count" id="sidebar-changes">${icon("git-branch")}${changed.length} changed components ${icon("arrow-up-right")}</button>` : ""}<div class="local-note">${icon("shield-check")} ${model.kind === "demo" ? "Explore freely. This is sample data." : "Analysis stays in your browser."}</div></div></aside>`;
+  return `<aside class="sidebar"><div class="sidebar-top"><span class="eyebrow">WORKSPACE</span><button class="map-link ${!selectedWorkflow ? "active" : ""}" id="all-map">${icon("network")} All workflows <span>${model.nodes.length}</span></button></div><div class="workflow-heading"><span class="eyebrow">WORKFLOWS</span><span class="count">${model.workflows.length}</span></div><div class="workflow-list">${model.workflows.length ? model.workflows.map((w, i) => `<button class="workflow-item ${w.id === selectedWorkflow ? "selected" : ""}" data-workflow="${esc(w.id)}"><span class="workflow-icon">${icon(w.icon)}</span><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components <span>·</span> ${i === 0 ? "Core flow" : "Workflow"}</small></span>${w.id === selectedWorkflow ? icon("chevron-right") : ""}</button>`).join("") : '<p class="sidebar-note">No entry points found. Explore the application map or open a project with routes or controllers.</p>'}</div><div class="sidebar-bottom"><div class="activity-title"><span class="eyebrow">LIVE CHANGES</span><span class="live-dot ${liveTimer || simulation ? "on" : ""}"></span></div><div class="activity-card">${icon("radio")}<strong>${model.kind === "demo" ? "See a change unfold" : liveTimer ? "Watching your project" : "Your project is mapped"}</strong><p>${model.kind === "demo" ? "Preview how an agent’s changes appear on your map." : liveTimer ? "File changes are reflected automatically." : "Reopen the folder to refresh, or connect live watching in a supported browser."}</p><button id="simulate" class="activity-button">${icon(model.kind === "demo" ? "play" : "refresh-cw")}${model.kind === "demo" ? "Small change demo" : "Refresh project"}</button>${model.kind === "demo" ? `<button id="simulate-large" class="activity-button">${icon("layers")} Large change demo</button><button id="reset-demo" class="text-button">Reset demo</button><small class="demo-scale">Small: 2 components · Large: 13 components</small>` : ""}</div>${changed.length ? `<button class="change-count" id="sidebar-changes">${icon("git-branch")}${changed.length} changed components ${icon("arrow-up-right")}</button>` : ""}<div class="local-note">${icon("shield-check")} ${model.kind === "demo" ? "Explore freely. This is sample data." : "Analysis stays in your browser."}</div></div></aside>`;
 }
 function render() {
   if (selectedEdge && !edgeDetails(model, mode, ...selectedEdge))
@@ -184,6 +190,8 @@ function render() {
   uiIcons();
 }
 const layoutPositions = new Map();
+let componentBoundaries = [],
+  hiddenContextCount = 0;
 function graphItems() {
   const graph =
     mode === "overview"
@@ -193,14 +201,30 @@ function graphItems() {
             mode === "functions" ? functionItems(model, layers) : model.nodes,
           edges: mode === "functions" ? model.functionEdges || [] : model.edges,
         };
-  const items = layoutGraph(graph.items, graph.edges, {
-    compact: mode === "functions",
-    previous: layoutPositions.get(mode) || new Map(),
-  });
+  const focused = focusGraph(graph, activeWorkflow());
+  hiddenContextCount = focused.hidden;
+  const key =
+    mode +
+    ":" +
+    (selectedWorkflow || "all") +
+    ":" +
+    JSON.stringify(focused.edges);
+  componentBoundaries = [];
+  let items;
+  if (mode === "functions") {
+    const result = functionLayout(focused.items, focused.edges);
+    items = result.items;
+    componentBoundaries = result.groups;
+  } else {
+    items = layoutGraph(focused.items, focused.edges, {
+      previous: layoutPositions.get(key) || new Map(),
+    });
+  }
   layoutPositions.set(
-    mode,
+    key,
     new Map(items.map((n) => [n.id, { x: n.x, y: n.y }])),
   );
+
   return items;
 }
 function drawGraph() {
@@ -258,29 +282,23 @@ function drawGraph() {
     !matchMedia("(prefers-reduced-motion: reduce)").matches;
   const maxY = Math.max(
     500,
-    ...items.map((n) => n.y + (mode === "functions" ? 260 : 145)),
+    ...items.map((n) => n.y + (mode === "functions" ? 160 : 220)),
+    ...componentBoundaries.map((g) => g.y + g.height + 50),
   );
-  const maxX = Math.max(500, ...items.map((n) => n.x + 285));
+  const maxX = Math.max(
+    500,
+    ...items.map((n) => n.x + 285),
+    ...componentBoundaries.map((g) => g.x + g.width + 30),
+  );
   $("#world").style.width = maxX + "px";
   $("#world").style.height = maxY + "px";
   $("#world").innerHTML =
-    `<svg class="connections" width="${maxX}" height="${maxY}" aria-hidden="${mode === "overview"}"><defs><marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="9.8" markerHeight="9.8" viewBox="0 0 7 7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
+    `${componentBoundaries.map((g) => `<div class="component-boundary" style="left:${g.x}px;top:${g.y}px;width:${g.width}px;height:${g.height}px"><span>${esc(g.title)}</span></div>`).join("")}${hiddenContextCount ? `<button class="context-box" id="show-context" style="left:24px;top:${maxY}px">${hiddenContextCount} other ${entityLabel} collapsed · Show all workflows ${icon("arrow-up-right")}</button>` : ""}<svg class="connections" width="${maxX}" height="${maxY}" aria-hidden="${mode === "overview"}"><defs><marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="9.8" markerHeight="9.8" viewBox="0 0 7 7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
       .map(([a, b], i) => {
         const s = positions.get(a),
           t = positions.get(b);
         if (!s || !t) return "";
-        const sy = s.y + 58,
-          ty = t.y + 58;
-        let d;
-        if (s.y === t.y && Math.abs(t.x - s.x) <= 300 && t.x !== s.x) {
-          const forward = t.x > s.x;
-          d = forward
-            ? `M${s.x + 234} ${sy} C${s.x + 266} ${sy},${t.x - 32} ${ty},${t.x} ${ty}`
-            : `M${s.x} ${sy} C${s.x - 32} ${sy},${t.x + 266} ${ty},${t.x + 234} ${ty}`;
-        } else {
-          const channel = Math.min(s.y, t.y) - 15;
-          d = `M${s.x + 234} ${sy} L${s.x + 264} ${sy} L${s.x + 264} ${channel} L${t.x + 270} ${channel} L${t.x + 270} ${ty} L${t.x + 234} ${ty}`;
-        }
+        const d = routeEdge(s, t, items, { compact: mode === "functions" });
         const active = selectedEdge?.[0] === a && selectedEdge?.[1] === b;
         const change = connectionStatus(model, mode, s, t);
         const delay = ((depths.get(a) || 0) * 0.85 - flowElapsed).toFixed(2);
@@ -306,7 +324,34 @@ function drawGraph() {
   $("#empty-search").hidden = !search || items.some(matches);
   $("#zoom-label").textContent = Math.round(zoom * 100) + "%";
   applyTransform();
+  $("#show-context")?.addEventListener("click", () => {
+    selectedWorkflow = null;
+    selectedNode = selectedFn = selectedEdge = null;
+    render();
+    fitGraph();
+  });
+  const trace = (pair) => {
+    $("#world").classList.toggle("tracing", !!pair);
+    document.querySelectorAll("[data-edge]").forEach((el) => {
+      const e = edges[Number(el.dataset.edge)];
+      el.classList.toggle(
+        "traced",
+        !!pair && e[0] === pair[0] && e[1] === pair[1],
+      );
+    });
+    document
+      .querySelectorAll("[data-node]")
+      .forEach((el) =>
+        el.classList.toggle(
+          "trace-node",
+          !!pair && pair.includes(el.dataset.node),
+        ),
+      );
+  };
+  trace(selectedEdge);
   document.querySelectorAll("[data-edge]").forEach((el) => {
+    el.onmouseenter = el.onfocus = () => trace(edges[Number(el.dataset.edge)]);
+    el.onmouseleave = el.onblur = () => trace(selectedEdge);
     const open = (event) => {
       event.stopPropagation();
       selectedEdge = edges[Number(el.dataset.edge)];
@@ -369,7 +414,9 @@ function applyTransform() {
 function fitGraph() {
   const canvas = $("#canvas");
   const elements = [
-    ...document.querySelectorAll("#world .graph-node, #world .layer-label"),
+    ...document.querySelectorAll(
+      "#world .graph-node, #world .component-boundary, #world .context-box",
+    ),
   ];
   if (!elements.length) return;
   const bounds = {
@@ -751,15 +798,19 @@ function bind() {
   $("#settings").onclick = showSettings;
   $("#all-map").onclick = () => {
     selectedWorkflow = null;
+    selectedNode = selectedFn = selectedEdge = null;
     render();
+    fitGraph();
   };
   document.querySelectorAll("[data-workflow]").forEach(
     (el) =>
       (el.onclick = () => {
         selectedWorkflow = el.dataset.workflow;
+        selectedNode = selectedFn = selectedEdge = null;
         flowStartedAt = performance.now();
         changesOnly = false;
         render();
+        fitGraph();
       }),
   );
   $("#changes-toggle").onclick = () => {
