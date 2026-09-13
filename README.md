@@ -26,6 +26,7 @@ npm run build # Build static files into dist/
 - Select a workflow to highlight related logic. Drag to pan and scroll to zoom.
 - Use the **lock button** beside the zoom controls to keep the detail level fixed while zooming. The level tabs still work manually.
 - Select a node to inspect inputs, outputs, decisions, and side effects.
+- Click a connection in Components or Functions to inspect its purpose, calls, and callee inputs/results. Imported purposes are inferred; import-only dependencies are labeled as unknown. System connections are not selectable.
 - Choose **Open project** to analyze a local JavaScript/TypeScript folder. Supported Chromium browsers can watch it for changes; other browsers import a snapshot.
 - Optionally connect an OpenAI-compatible provider in settings for focused AI explanations. Its endpoint must allow browser requests (CORS).
 

@@ -480,6 +480,8 @@ kbd {
   border-radius: 4px;
 }
 .canvas {
+  -webkit-user-select: none;
+  user-select: none;
   position: relative;
   flex: 1;
   overflow: hidden;
@@ -559,6 +561,23 @@ kbd {
 .edge.lit {
   stroke: #729e81;
   opacity: 0.7;
+}
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.edge-control:hover .edge,
+.edge-control:focus .edge,
+.edge.selected {
+  stroke: #c1f6ce;
+  stroke-width: 3;
+  opacity: 1;
+}
+.edge-control:focus {
+  outline: none;
 }
 .graph-node {
   position: absolute;

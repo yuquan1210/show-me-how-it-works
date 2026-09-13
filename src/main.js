@@ -99,6 +99,7 @@ const icons = {
 };
 import { createDemo, applyDemoChange } from "./demo.js";
 import { frameBounds, zoomStep } from "./camera.js";
+import { edgeDetails } from "./edge-details.js";
 import { functionItems } from "./function-graph.js";
 import "./style.css";
 
@@ -120,6 +121,7 @@ let model = createDemo(),
   selectedWorkflow = "checkout",
   selectedNode = null,
   selectedFn = null,
+  selectedEdge = null,
   zoom = 1,
   fittedZoom = 1,
   relativeZoom = 1,
@@ -168,9 +170,11 @@ function sidebar() {
   return `<aside class="sidebar"><div class="sidebar-top"><span class="eyebrow">WORKSPACE</span><button class="map-link ${!selectedWorkflow ? "active" : ""}" id="all-map">${icon("network")} Application map <span>${model.nodes.length}</span></button></div><div class="workflow-heading"><span class="eyebrow">WORKFLOWS</span><span class="count">${model.workflows.length}</span></div><div class="workflow-list">${model.workflows.length ? model.workflows.map((w, i) => `<button class="workflow-item ${w.id === selectedWorkflow ? "selected" : ""}" data-workflow="${esc(w.id)}"><span class="workflow-icon">${icon(w.icon)}</span><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components <span>·</span> ${i === 0 ? "Core flow" : "Workflow"}</small></span>${w.id === selectedWorkflow ? icon("chevron-right") : ""}</button>`).join("") : '<p class="sidebar-note">No entry points found. Explore the application map or open a project with routes or controllers.</p>'}</div><div class="sidebar-bottom"><div class="activity-title"><span class="eyebrow">LIVE CHANGES</span><span class="live-dot ${liveTimer || simulation ? "on" : ""}"></span></div><div class="activity-card">${icon("radio")}<strong>${model.kind === "demo" ? "See a change unfold" : liveTimer ? "Watching your project" : "Your project is mapped"}</strong><p>${model.kind === "demo" ? "Preview how an agent’s changes appear on your map." : liveTimer ? "File changes are reflected automatically." : "Reopen the folder to refresh, or connect live watching in a supported browser."}</p><button id="simulate" class="activity-button">${icon(model.kind === "demo" ? "play" : "refresh-cw")}${model.kind === "demo" ? (simulation ? "Reset demo" : "Play change demo") : "Refresh project"}</button></div>${changed.length ? `<button class="change-count" id="sidebar-changes">${icon("git-branch")}${changed.length} changed components ${icon("arrow-up-right")}</button>` : ""}<div class="local-note">${icon("shield-check")} ${model.kind === "demo" ? "Explore freely. This is sample data." : "Analysis stays in your browser."}</div></div></aside>`;
 }
 function render() {
+  if (selectedEdge && !edgeDetails(model, mode, ...selectedEdge))
+    selectedEdge = null;
   const workflow = activeWorkflow();
   $("#app").innerHTML =
-    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} System</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Workflow highlighted" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="level-lock" aria-label="Lock detail level" aria-pressed="false"></button><span class="control-divider"></span><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("scan")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div><footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/>`;
+    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} System</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Workflow highlighted" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="level-lock" aria-label="Lock detail level" aria-pressed="false"></button><span class="control-divider"></span><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("scan")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div><footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/>`;
   bind();
   drawGraph();
   renderInspector();
@@ -260,7 +264,7 @@ function drawGraph() {
   $("#world").style.width = "1120px";
   $("#world").style.height = maxY + "px";
   $("#world").innerHTML =
-    `<svg class="connections" width="1150" height="${maxY}" aria-hidden="true"><defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
+    `<svg class="connections" width="1150" height="${maxY}" aria-hidden="${mode === "overview"}"><defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
       .map(([a, b], i) => {
         const s = positions.get(a),
           t = positions.get(b);
@@ -275,7 +279,11 @@ function drawGraph() {
           d = `M${s.x} ${sy} C${s.x - 28} ${sy},${t.x + 266} ${ty},${t.x + 234} ${ty}`;
         else
           d = `M${s.x + 234} ${sy} C${s.x + 265} ${sy},${t.x - 30} ${ty},${t.x} ${ty}`;
-        return `<path d="${d}" class="edge ${bright(s) && bright(t) ? "lit" : ""}" marker-end="url(#arrow)"/>`;
+        const active = selectedEdge?.[0] === a && selectedEdge?.[1] === b;
+        const line = `<path d="${d}" class="edge ${bright(s) && bright(t) ? "lit" : ""} ${active ? "selected" : ""}" marker-end="url(#arrow)"/>`;
+        return mode === "overview"
+          ? line
+          : `<g class="edge-control" data-edge="${i}" role="button" tabindex="0" aria-label="Explain ${esc(s.title)} to ${esc(t.title)}" aria-pressed="${active}">${line}<path class="edge-hit" d="${d}" vector-effect="non-scaling-stroke"/><title>${esc(s.title)} → ${esc(t.title)}: click to understand this connection</title></g>`;
       })
       .join(
         "",
@@ -292,6 +300,24 @@ function drawGraph() {
   $("#empty-search").hidden = !search || items.some(matches);
   $("#zoom-label").textContent = Math.round(zoom * 100) + "%";
   applyTransform();
+  document.querySelectorAll("[data-edge]").forEach((el) => {
+    const open = (event) => {
+      event.stopPropagation();
+      selectedEdge = edges[Number(el.dataset.edge)];
+      selectedNode = null;
+      selectedFn = null;
+      renderInspector();
+      drawGraph();
+    };
+    el.onclick = open;
+    el.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        open(event);
+        document.querySelector(`[data-edge="${el.dataset.edge}"]`)?.focus();
+      }
+    };
+  });
   document.querySelectorAll("[data-node]").forEach((el) => {
     const open = () => {
       const id = el.dataset.node;
@@ -299,6 +325,7 @@ function drawGraph() {
         setDetailLevel("architecture");
       } else {
         const item = positions.get(id);
+        selectedEdge = null;
         selectedNode = item.parentId || id;
         selectedFn = item.isFunction ? item.functionIndex : null;
         renderInspector();
@@ -356,6 +383,7 @@ function fitGraph() {
   $("#zoom-label").textContent = Math.round(zoom * 100) + "%";
 }
 function setDetailLevel(next) {
+  if (next !== mode) selectedEdge = null;
   mode = next;
   relativeZoom = 1;
   render();
@@ -366,7 +394,10 @@ function setDetailLevel(next) {
 function updateLevelLock() {
   const button = $("#level-lock");
   button.setAttribute("aria-pressed", String(levelLocked));
-  button.setAttribute("aria-label", levelLocked ? "Unlock detail level" : "Lock detail level");
+  button.setAttribute(
+    "aria-label",
+    levelLocked ? "Unlock detail level" : "Lock detail level",
+  );
   button.title = levelLocked
     ? "Detail level locked — zoom only changes magnification. Click to unlock."
     : "Lock detail level to zoom without switching views";
@@ -399,6 +430,11 @@ function list(title, items) {
     : "";
 }
 function renderInspector() {
+  if (selectedEdge) {
+    const detail = edgeDetails(model, mode, ...selectedEdge);
+    if (detail) return renderEdgeInspector(detail);
+    selectedEdge = null;
+  }
   const panel = $("#inspector"),
     n = model.nodes.find((n) => n.id === selectedNode);
   if (!n) {
@@ -458,6 +494,34 @@ function renderInspector() {
     e.preventDefault();
     askAI($("#ask-input").value, n, fn);
   };
+  uiIcons();
+}
+function renderEdgeInspector(detail) {
+  const panel = $("#inspector");
+  panel.classList.add("open");
+  $("#canvas").classList.add("with-inspector");
+  panel.innerHTML = `<div class="inspector-header"><span class="eyebrow">CONNECTION PURPOSE</span><button class="icon-button" id="close-edge" aria-label="Close connection details">${icon("x")}</button></div><div class="inspector-body"><h2>${esc(detail.from.title)} → ${esc(detail.to.title)}</h2><span class="detail-type">${esc(detail.evidence)}</span><p class="detail-summary">${esc(detail.purpose)}</p>${list(
+    "CALLS INVOLVED",
+    detail.calls.map(
+      ({ caller, callee }) => `${caller.title} → ${callee.title}`,
+    ),
+  )}${list("CALLEE INPUTS", detail.inputs)}${list("CALLEE RESULTS", detail.outputs)}${list("CALLEE SIDE EFFECTS", detail.effects)}<section class="detail-section"><h3>EXPLORE ENDPOINTS</h3>${[detail.from, detail.to].map((n, i) => `<button class="related-node" data-endpoint="${i}">${icon("box")}${esc(n.title)}${icon("arrow-up-right")}</button>`).join("")}</section></div>`;
+  $("#close-edge").onclick = () => {
+    selectedEdge = null;
+    panel.classList.remove("open");
+    $("#canvas").classList.remove("with-inspector");
+    drawGraph();
+  };
+  document.querySelectorAll("[data-endpoint]").forEach((button) => {
+    button.onclick = () => {
+      const n = [detail.from, detail.to][Number(button.dataset.endpoint)];
+      selectedEdge = null;
+      selectedNode = n.parentId || n.id;
+      selectedFn = n.parentId ? n.index : null;
+      renderInspector();
+      drawGraph();
+    };
+  });
   uiIcons();
 }
 async function askAI(question, n, fn) {
@@ -616,6 +680,7 @@ async function installProject(files, name, watch = false) {
     return false;
   }
   model = watch ? diffModels(model, next) : next;
+  if (!watch) selectedEdge = null;
   aiCache.clear();
   if (!watch) {
     selectedWorkflow = null;
@@ -777,7 +842,9 @@ function bind() {
   const canvas = $("#canvas");
   let drag = null;
   canvas.onpointerdown = (e) => {
-    if (e.target.closest("button,article,.zoom-controls")) return;
+    if (e.target.closest("button,article,.zoom-controls,[data-edge]")) return;
+    // Panning is a canvas gesture, not a browser text-selection gesture.
+    e.preventDefault();
     drag = { x: e.clientX, y: e.clientY, start: { ...pan } };
     canvas.setPointerCapture(e.pointerId);
     canvas.classList.add("dragging");
@@ -819,7 +886,9 @@ document.addEventListener("keydown", (e) => {
     $("#search").focus();
   }
   if (e.key === "Escape") {
+    selectedEdge = null;
     selectedNode = null;
+    drawGraph();
     $("#inspector").classList.remove("open");
     $("#canvas").classList.remove("with-inspector");
   }
