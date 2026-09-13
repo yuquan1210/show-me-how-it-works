@@ -1,0 +1,19 @@
+{
+  "name": "show-me-how-it-works",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "typescript": "^5.9.3",
+    "lucide": "^0.468.0"
+  },
+  "devDependencies": {
+    "vite": "^6.1.0",
+    "@playwright/test": "^1.51.0"
+  }
+}
