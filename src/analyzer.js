@@ -28,6 +28,11 @@ function actionText(name) {
           ? `Updates ${w.replace(/^(Update|Set) /, "").toLowerCase()}.`
           : `Handles ${w.toLowerCase()}.`;
 }
+function callLabel(expression) {
+  if (ts.isIdentifier(expression)) return words(expression.text).toLowerCase();
+  if (ts.isPropertyAccessExpression(expression)) return words(expression.name.text).toLowerCase();
+  return "a computed operation";
+}
 function describeCondition(n) {
   if (ts.isIdentifier(n)) return words(n.text).toLowerCase();
   if (ts.isPropertyAccessExpression(n))
@@ -60,7 +65,7 @@ function describeCondition(n) {
       return `${describeCondition(n.left)} ${op} ${describeCondition(n.right)}`;
   }
   if (ts.isCallExpression(n))
-    return `${words(n.expression.getText().split(".").at(-1)).toLowerCase()} succeeds`;
+    return `${callLabel(n.expression)} succeeds`;
   return "a computed condition holds";
 }
 function branchOutcome(n) {
@@ -74,7 +79,7 @@ function branchOutcome(n) {
 function summarizeReturn(exp) {
   if (!exp) return "No value";
   if (ts.isObjectLiteralExpression(exp))
-    return `Object containing ${exp.properties.map((p) => (p.name ? words(p.name.getText()).toLowerCase() : "additional fields")).join(", ")}`;
+    return `Object containing ${exp.properties.map((p) => (p.name && ts.isIdentifier(p.name) ? words(p.name.text).toLowerCase() : "additional fields")).join(", ")}`;
   if (ts.isArrayLiteralExpression(exp)) return "List of values";
   if (exp.kind === ts.SyntaxKind.NullKeyword) return "Empty result";
   if (
@@ -86,7 +91,7 @@ function summarizeReturn(exp) {
   if (ts.isNumericLiteral(exp)) return "Numeric result";
   if (ts.isAwaitExpression(exp)) return summarizeReturn(exp.expression);
   if (ts.isCallExpression(exp))
-    return `Result from ${words(exp.expression.getText().split(".").at(-1)).toLowerCase()}`;
+    return `Result from ${callLabel(exp.expression)}`;
   return "Computed result";
 }
 export function analyzeFiles(files, name = "My application") {
@@ -146,11 +151,11 @@ export function analyzeFiles(files, name = "My application") {
         n.body
       ) {
         const fnName =
-          n.name?.getText(sf) ||
+          (n.name && ts.isIdentifier(n.name) ? n.name.text : null) ||
           (ts.isVariableDeclaration(n.parent)
-            ? n.parent.name.getText(sf)
+            ? ts.isIdentifier(n.parent.name) ? n.parent.name.text : null
             : ts.isPropertyAssignment(n.parent)
-              ? n.parent.name.getText(sf)
+              ? ts.isIdentifier(n.parent.name) ? n.parent.name.text : null
               : null);
         if (fnName) {
           const fnId = `${path}#${fnName}:${fns.filter((f) => f.name === fnName).length}`;
@@ -169,7 +174,8 @@ export function analyzeFiles(files, name = "My application") {
               return;
             if (ts.isCallExpression(c)) {
               callSites.push([fnId, c]);
-              const call = c.expression.getText(sf).split(".").at(-1);
+              const call = ts.isIdentifier(c.expression) ? c.expression.text
+                : ts.isPropertyAccessExpression(c.expression) ? c.expression.name.text : "computed operation";
               calls.push(call);
               if (
                 /^(save|insert|delete|update|write|send|publish|emit|create)/i.test(

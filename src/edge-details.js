@@ -48,5 +48,8 @@ export function edgeDetails(model, level, fromId, toId) {
     inputs: [...new Set(callees.flatMap((fn) => fn.inputs || []))],
     outputs: [...new Set(callees.flatMap((fn) => fn.outputs || []))],
     effects: [...new Set(callees.flatMap((fn) => fn.effects || []))],
+    failures: curated && fromId === "orders" && toId === "inventory"
+      ? ["Insufficient stock stops checkout; reservations are released if checkout fails."]
+      : ["Caller recovery is not established. A failed call may prevent downstream steps."],
   };
 }

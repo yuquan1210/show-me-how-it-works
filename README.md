@@ -22,15 +22,16 @@ npm run build # Build static files into dist/
 
 ## Explore the app
 
-- Switch between **System**, **Components**, and **Functions**. Each extracted named function has its own selectable node.
-- System boxes group application areas (inferred from paths for imported projects). Components follow left-to-right dependency stages; functions remain individually selectable within component boundaries. Highlighting and inspection preserve positions; changing workflow focus or graph structure can reflow the layout.
+- Zoom through **Overview**, **Components**, and **Functions**. Each extracted named function has its own selectable node.
+- Overview boxes group business areas (inferred from paths for imported projects). Components follow left-to-right dependency stages; functions remain individually selectable within component boundaries. Highlighting and inspection preserve positions; changing workflow focus or graph structure can reflow the layout.
+- Open **Architecture** separately for application, data-store, and external-system boundaries. Zoom only magnifies this view. Select a boundary to inspect its members or explore its components. This is C4-inspired, not a strict C4 implementation. The sample maps its backend, database, and providers; it does not include a frontend. Local imports use explicit frontend/backend folder-name hints; unclear ownership stays unassigned, and external dependencies are not invented.
 - Select a workflow to focus its graph and collapse unrelated areas into a context box. Choose **All workflows** to restore the overview. Drag to pan and scroll to zoom.
 - Hover or select a connection to trace its complete path and both endpoints while other paths fade.
 - Selecting a workflow plays a one-pass, entry-to-end flow animation (illustrative, not a runtime trace). Reduced-motion preferences are respected.
 - Try **Small change demo** (2 components) or **Large change demo** (13 components). Added nodes/connections are green, updated or affected ones amber, and removed ones pink and dashed. Reset restores the original sample.
 - Use the **lock button** beside the zoom controls to keep the detail level fixed while zooming. The level tabs still work manually.
-- Select a node to inspect inputs, outputs, decisions, and side effects.
-- Click a connection in Components or Functions to inspect its purpose, calls, and callee inputs/results. Imported purposes are inferred; import-only dependencies are labeled as unknown. System connections are not selectable.
+- Select a node for a compact behavior card: **Receives**, **Checks & branches**, **Changes**, **Returns**, and **If it fails**. Missing evidence stays explicitly unknown.
+- Click a connection in Components or Functions to inspect its purpose, expected information/results, side effects, and failure uncertainty. Destination inputs are not verified call arguments. Imported purposes are inferred; import-only dependencies are labeled as unknown. Overview and Architecture connections are not selectable.
 - Choose **Open project** to analyze a local JavaScript/TypeScript folder. Supported Chromium browsers can watch it for changes; other browsers import a snapshot.
 - Optionally connect an OpenAI-compatible provider in settings for focused AI explanations. Its endpoint must allow browser requests (CORS).
 
@@ -39,6 +40,8 @@ npm run build # Build static files into dist/
 The included Commerce app and change demo are curated samples. Imported workflows and labels are inferred from static analysis, not verified runtime traces. Function edges show resolvable calls; dynamic dispatch, framework injection, path aliases, and anonymous callbacks are not fully supported. Tests, configuration, dependencies, and build outputs are excluded.
 
 Imported source and API keys stay in browser memory. Selected implementation code is sent to your configured AI provider only when you submit a question. Refreshing clears the imported project and key. AI explanations may be inaccurate.
+
+The UI has no raw-source or pseudocode view. Source is used internally for analysis only. AI answers must be structured plain-language cards; malformed responses are rejected and code-like content is withheld. These safeguards are not a semantic proof of arbitrary provider output. All inferred explanations remain labeled as unverified.
 
 ## Implementation
 
