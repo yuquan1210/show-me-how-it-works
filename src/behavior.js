@@ -2,9 +2,9 @@ const failurePattern = /error|fail|reject|declin|unavailable|insufficient|not fo
 export function behaviorCard(detail, curated = false) {
   const decisions = detail.decisions || [];
   return [
-    ["Receives", detail.inputs?.length ? detail.inputs : [curated ? "No inputs listed" : "No parameters declared; other inputs may exist"]],
+    ["Receives", detail.inputs?.length ? detail.inputs : [curated ? "No inputs listed" : "No parameters declared. Other inputs may exist."]],
     ["Checks & branches", decisions.length ? decisions : ["No explicit branches mapped"]],
-    ["Changes", detail.effects?.length ? detail.effects : ["No side effects mapped; not a guarantee of purity"]],
+    ["Changes", detail.effects?.length ? detail.effects : ["No side effects mapped. This is not a guarantee of purity."]],
     ["Returns", detail.outputs?.length ? detail.outputs : ["No explicit return mapped"]],
     ["If it fails", decisions.filter(s => failurePattern.test(s)).length
       ? decisions.filter(s => failurePattern.test(s))

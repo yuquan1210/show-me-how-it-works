@@ -22,6 +22,7 @@ test("behavior cards surface unknown failure and side effects explicitly", () =>
   const card = behaviorCard({});
   assert.equal(card.length, 5);
   assert.match(card.at(-1)[1][0], /not established/);
+  assert.ok(card.every(([,values]) => values.every(v => !plainBehavior(v).includes("omitted"))));
 });
 test("AI answers require structured plain-language cards, with code withheld", () => {
   assert.throws(() => parseBehaviorAnswer("Here is some prose"));
