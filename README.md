@@ -35,6 +35,22 @@ npm run build # Build static files into dist/
 - Choose **Open project** to analyze a local JavaScript/TypeScript folder. Supported Chromium browsers can watch it for changes; other browsers import a snapshot.
 - Optionally connect an OpenAI-compatible provider in settings for focused AI explanations. Its endpoint must allow browser requests (CORS).
 
+## Replay commit history
+
+Open **Commit history** in the sidebar. Select any commit, then **Play from this commit** to advance to the latest imported commit. Pause at any time, step backward/forward, or choose 4, 8, or 12 seconds per commit. Selecting a node or connection pauses playback for inspection.
+
+The sample includes six **illustrative snapshots**, not real Git commits. Added boxes appear, modified boxes glow, and removed boxes fade but remain inspectable until the next commit. Connections animate too. Positions are reserved across the timeline, and reduced-motion preferences disable animations. Each commit is compared with its preceding commit, not with the last item you clicked.
+
+For a real JavaScript/TypeScript repository, run this from the local app checkout (after `npm ci`):
+
+```sh
+node scripts/export-history.mjs /absolute/path/to/repo /absolute/path/to/project.history.json
+```
+
+Then choose **Import Git history** and select that file. The exporter reads **HEAD’s first-parent chain, oldest to newest**, without checking out commits or changing the repository. Merge commits are compared with their first parent; side branches are not replayed independently. Export again to include newer commits. Uncommitted changes are not included. Existing output files are never overwritten.
+
+Exports contain graph summaries, paths, commit subjects, dates, and SHA-256 fingerprints—not source bodies. They may still contain private project information; keep them private. Import stays in browser memory. Limits: 5,000 commits / 80 MB. Unsupported files, tests, config and files larger than 600 KB are excluded. Parsing limitations still apply; this is structural evolution, not verified runtime behavior.
+
 ## Scope and privacy
 
 The included Commerce app and change demo are curated samples. Imported workflows and labels are inferred from static analysis, not verified runtime traces. Function edges show resolvable calls; dynamic dispatch, framework injection, path aliases, and anonymous callbacks are not fully supported. Tests, configuration, dependencies, and build outputs are excluded.

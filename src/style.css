@@ -12,6 +12,40 @@
   --canvas: #101418;
   --font-mono: "IBM Plex Mono", monospace;
 }
+.sidebar.history-sidebar { padding: 16px 12px; width: 290px; }
+.history-heading { padding: 14px 8px; }
+.history-heading h2 { font-size: 19px; margin: 0 0 8px; }
+.history-heading span, .history-import p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.history-player { padding: 12px; background: #1b2420; border: 1px solid #394a40; border-radius: 10px; }
+.history-player .activity-button { margin: 0; width: 100%; min-height: 42px; font-size: 14px; }
+.history-steps { display: flex; align-items: center; justify-content: space-between; margin: 10px 0; }
+.history-steps button { min-width: 38px; min-height: 32px; }
+.history-speed { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12px; }
+.history-speed select { background: #15191e; color: #e1e5e8; border: 1px solid var(--border); border-radius: 4px; padding: 4px; }
+.commit-list { flex: 1; min-height: 120px; overflow-y: auto; margin: 12px 0; }
+.commit-item { width: 100%; padding: 12px 8px; text-align: left; justify-content: flex-start; align-items: flex-start; border-left: 2px solid #354039; border-radius: 0 8px 8px 0; }
+.commit-item.current { background: #25362b; border-color: var(--green); }
+.commit-item strong { display: block; font-size: 14px; font-weight: 500; line-height: 1.45; }
+.commit-item small { display: block; font-size: 12px; color: #9aa99f; margin-top: 6px; }
+.commit-number { flex-shrink: 0; border-radius: 50%; background: #303b33; min-width: 23px; height: 23px; font-size: 12px; padding-top: 3px; }
+.history-import { border-top: 1px solid var(--border); padding-top: 10px; }
+.history-import .activity-button { width: 100%; }
+.history-canvas .graph-node.added { animation: history-arrive 1400ms both; }
+.history-canvas .graph-node.modified { animation: history-update 1400ms both; }
+.history-canvas .graph-node.removed { animation: history-retire 1400ms both; }
+.history-canvas .edge-added { animation: history-connect 1400ms both; }
+.history-canvas .edge-removed { animation: history-retire 1400ms both; }
+.history-canvas .edge-affected { animation: history-update 1400ms both; }
+#canvas.history-canvas .graph-node, #canvas.history-canvas .edge { animation-delay: var(--history-elapsed, 0ms); }
+#canvas.history-paused .graph-node, #canvas.history-paused .edge { animation-play-state: paused; }
+.history-canvas .minimap { display: none; }
+.history-canvas .canvas-context { max-width: calc(100% - 30px); flex-wrap: wrap; }
+@keyframes history-arrive { from { opacity: 0; transform: scale(.84); } to { opacity: 1; transform: scale(1); } }
+@keyframes history-update { 0%, 55% { filter: drop-shadow(0 0 14px #e7b85c); } 100% { filter: none; } }
+@keyframes history-retire { from { opacity: 1; } to { opacity: .3; } }
+@keyframes history-connect { from { opacity: 0; stroke-dasharray: 12 18; } to { opacity: 1; stroke-dasharray: 0; } }
+@media (prefers-reduced-motion: reduce) { .history-canvas .graph-node, .history-canvas .edge { animation: none !important; } }
+@media (max-width: 800px) { .sidebar.history-sidebar { width: 230px; display: flex; } .history-sidebar .map-link { font-size: 14px; } }
 * {
   box-sizing: border-box;
 }

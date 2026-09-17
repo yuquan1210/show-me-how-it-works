@@ -286,6 +286,8 @@ export function systemGraph(model) {
   return {
     items: [...groups.values()].map((n) => ({
       ...n,
+      status: n.members.every(id => model.nodes.find(m => m.id === id)?.status === "added") ? "added"
+        : n.members.every(id => model.nodes.find(m => m.id === id)?.status === "removed") ? "removed" : n.status,
       summary: `${n.members.length} components · ${model.kind === "demo" ? "Application area" : "Inferred from paths"}`,
     })),
     edges,
