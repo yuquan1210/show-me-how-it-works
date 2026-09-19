@@ -16,7 +16,7 @@ const clean = model => {
   copy.edges = copy.edges.filter(([a,b]) => ids.has(a) && ids.has(b));
   copy.functionEdges = (copy.functionEdges || []).filter(([a,b]) => fids.has(a) && fids.has(b));
   delete copy.edgeChanges; delete copy.functionEdgeChanges;
-  copy.workflows = copy.workflows.map(w => ({...w,nodes:w.nodes.filter(id => ids.has(id))})).filter(w => w.nodes.length);
+  copy.workflows = copy.workflows.filter(w=>ids.has(w.entryId || w.nodes[0])).map(w => ({...w,nodes:w.nodes.filter(id => ids.has(id))})).filter(w => w.nodes.length);
   return copy;
 };
 const signature = n => n.fingerprint || JSON.stringify([n.summary,n.inputs,n.outputs,n.decisions,n.effects,n.functionDetails?.map(signature)]);
@@ -119,14 +119,14 @@ export function validateHistory(value) {
 }
 
 export class CommitPlayer {
-  constructor({count,onStep,onState,delay=4000,clock=() => performance.now(),schedule=(fn,ms)=>setTimeout(fn,ms),cancel=id=>clearTimeout(id)}) {
-    Object.assign(this,{count,onStep,onState,delay,clock,schedule,cancel,index:0,playing:false,remaining:delay,timer:null});
+  constructor({count,onStep,onState,nextIndex=i=>i+1,delay=4000,clock=() => performance.now(),schedule=(fn,ms)=>setTimeout(fn,ms),cancel=id=>clearTimeout(id)}) {
+    Object.assign(this,{count,onStep,onState,nextIndex,delay,clock,schedule,cancel,index:0,playing:false,remaining:delay,timer:null});
   }
   select(index) { this.pause(); this.index=Math.max(0,Math.min(this.count-1,index)); this.remaining=this.delay; this.onStep(this.index); }
   play() { if(this.playing || this.index >= this.count-1) return; this.playing=true; this.onState(true); this.arm(); }
   arm() { this.started=this.clock(); this.timer=this.schedule(() => {
     this.timer=null; if(!this.playing)return;
-    this.index++; this.remaining=this.delay; this.onStep(this.index);
+    this.index=Math.min(this.count-1,Math.max(this.index+1,this.nextIndex(this.index))); this.remaining=this.delay; this.onStep(this.index);
     if(this.index >= this.count-1) {this.playing=false;this.onState(false);} else this.arm();
   },this.remaining); }
   pause() { if(this.timer !== null){this.cancel(this.timer);this.timer=null;this.remaining=Math.max(0,this.remaining-(this.clock()-this.started));} this.playing=false;this.onState(false); }

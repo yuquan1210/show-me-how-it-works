@@ -288,6 +288,7 @@ export function systemGraph(model) {
       ...n,
       status: n.members.every(id => model.nodes.find(m => m.id === id)?.status === "added") ? "added"
         : n.members.every(id => model.nodes.find(m => m.id === id)?.status === "removed") ? "removed" : n.status,
+      impact: model.nodes.some(m=>n.members.includes(m.id) && m.impact==="possible") && model.nodes.filter(m=>n.members.includes(m.id) && m.status!=="unchanged").every(m=>m.impact==="possible") ? "possible" : "within",
       summary: `${n.members.length} components · ${model.kind === "demo" ? "Application area" : "Inferred from paths"}`,
     })),
     edges,

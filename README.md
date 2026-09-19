@@ -41,6 +41,10 @@ Open **Commit history** in the sidebar. Select any commit, then **Play from this
 
 The sample includes six **illustrative snapshots**, not real Git commits. Added boxes appear, modified boxes glow, and removed boxes fade but remain inspectable until the next commit. Connections animate too. Positions are reserved across the timeline, and reduced-motion preferences disable animations. Each commit is compared with its preceding commit, not with the last item you clicked.
 
+Choose a workflow in the sidebar to scope the canvas and bottom timeline to it. The selection stays in place during playback. Enable **Skip unaffected commits** to jump over commits without mapped changes; the timeline reports how many were skipped. Removed or disconnected branches remain inspectable for their removal commit. Before creation and after removal, the canvas explains why the workflow is empty.
+
+Changed dependencies without confirmed call-path evidence are labeled **May affect**. Stable identities and uniquely matching entry fingerprints track workflow moves; ambiguous matches or splits are flagged instead of silently merged. These are static structural comparisons, not verified runtime behavior. History playback suspends workflow data-flow animation so it does not compete with change animations.
+
 For a real JavaScript/TypeScript repository, run this from the local app checkout (after `npm ci`):
 
 ```sh
