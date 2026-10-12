@@ -113,6 +113,8 @@ import { architectureGraph } from "./architecture.js";
 import { behaviorCard, plainBehavior, parseBehaviorAnswer } from "./behavior.js";
 import { createDemoHistory, validateHistory, CommitPlayer } from "./history.js";
 import { workflowCatalog, workflowCommit, workflowHistoryUnion, nextWorkflowCommit } from "./workflow-history.js";
+import { ExplanationQueue, ExplanationCache, explanationJobs, explanationProgress, allExplanationsReady, CARD_FIELDS, CARD_LABELS } from './explanations.js';
+import {orderedFiles,sourceSignature} from './project-revision.js';
 import "./style.css";
 
 const $ = (s) => document.querySelector(s),
@@ -153,9 +155,9 @@ let model = createDemo(),
   simulation = false,
   flowStartedAt = 0,
   aiConfig = {
-    url: "https://api.openai.com/v1",
-    key: "",
-    model: "gpt-4.1-mini",
+    url: "https://api.deepseek.com",
+    configured: false,
+    model: "deepseek-flash",
   },
   aiCache = new Map(),
   scanBusy = false;
@@ -165,6 +167,114 @@ let historyData = createDemoHistory(), historyOpen = false, historyPlayer = null
 let historyWorkflows = [], historySelection = null, historyScope = null, skipUnaffected = false,
   historyLastIndex = 0, historySkipped = 0;
 const historyChangeCache = new Map();
+let explanationConsent = false, explanationPreparing = false;
+let projectGate=false,projectGatePhase='mapping',projectLoadVersion=0;
+let pendingProject=null;
+let detailExplanationTab='ai';
+function explanationFields(card) {
+  return CARD_FIELDS.map((key,i)=>`<div class="explanation-field"><strong>${CARD_LABELS[i]}</strong><span>${esc(card[key]||'Not established')}</span></div>`).join('');
+}
+function showProjectGate() {
+  let dialog=document.querySelector('#project-loading');
+  if(!dialog){dialog=document.createElement('dialog');dialog.id='project-loading';dialog.className='project-loading';dialog.setAttribute('aria-label','Preparing project');dialog.addEventListener('cancel',e=>e.preventDefault());document.body.append(dialog);}
+  if(!dialog.open)dialog.showModal();
+  updateProjectGate();
+}
+function cancelProjectGate() {
+  pendingProject=null;
+  projectGate=false;projectLoadVersion++;explanationQueue.stop();explanationConsent=false;
+  document.querySelector('#project-loading')?.remove();stopWatching();model=createDemo();historyData=createDemoHistory();
+  selectedNode=selectedFn=selectedEdge=selectedWorkflow=boundaryScope=null;architectureView=false;mode='architecture';render();fitGraph();
+}
+function updateProjectGate() {
+  if(!projectGate)return;
+  const dialog=document.querySelector('#project-loading');if(!dialog)return;
+  const states=[...explanationQueue.states.values()],ready=states.filter(s=>s.status==='ready'&&!s.stale).length;
+  if(projectGatePhase==='generating'&&!explanationPreparing&&allExplanationsReady(explanationQueue)){projectGate=false;dialog.remove();fitGraph();toast('Project ready. All explanations are filled.');return;}
+  const loading=projectGatePhase==='mapping'||explanationPreparing;
+  const failed=states.filter(s=>s.status==='error');
+  dialog.innerHTML=`<h2>${loading?'Mapping your project':projectGatePhase==='consent'?'Prepare all explanations':'Preparing your project'}</h2><p>The canvas opens when every explanation is ready.</p><progress aria-label="Project preparation" ${loading?'':`max="${Math.max(states.length,1)}" value="${ready}"`}></progress><p role="status">${loading?'Reading core logic and building the explanation queue…':`${ready} of ${states.length} explanations ready`}</p>${projectGatePhase==='generating'?'<p data-explanation-live></p>':''}${!loading&&!aiConfig.configured?`<p role="alert">${esc(aiStatusMessage)}</p><button id="gate-check" class="primary-button">Check configuration again</button>`:''}${!loading&&projectGatePhase==='consent'&&aiConfig.configured?`<p>Analysis sends core source and dependency context to DeepSeek. Your key stays on the server. Provider charges may apply; generated text is cached on this device.</p><button id="gate-start" class="primary-button">Approve and generate all explanations</button>`:''}${failed.length?`<p role="alert">${failed.length} explanations failed. ${esc(failed[0].error||'Please retry.')}</p>`:''}${!loading&&projectGatePhase==='generating'?`<button id="gate-retry" class="primary-button">${explanationQueue.enabled?'Pause generation':failed.length?'Retry failed explanations':'Resume generation'}</button>`:''}<button id="gate-cancel" class="text-button">Cancel and return to sample</button>`;
+  dialog.querySelector('#gate-cancel').onclick=cancelProjectGate;
+  if(dialog.querySelector('#gate-start'))dialog.querySelector('#gate-start').onclick=()=>{explanationConsent=true;projectGatePhase='generating';explanationQueue.start();updateProjectGate();};
+  if(dialog.querySelector('#gate-check'))dialog.querySelector('#gate-check').onclick=async()=>{await checkAI();updateProjectGate();};
+  if(dialog.querySelector('#gate-retry'))dialog.querySelector('#gate-retry').onclick=()=>{if(explanationQueue.enabled)explanationQueue.stop();else{for(const s of explanationQueue.states.values())if(s.status==='error')s.status='queued';explanationQueue.start();}updateProjectGate();};
+  updateExplanationClock();
+}
+let explanationStorage;
+try { explanationStorage = window.localStorage; } catch {}
+const explanationQueue = new ExplanationQueue({cache:new ExplanationCache(explanationStorage),onChange:()=>updateExplanations()});
+function explanationScope() {return boundaryScope ? `area:${boundaryScope.id}` : selectedWorkflow ? `workflow:${selectedWorkflow}` : 'overview';}
+function explanationCard(id) {
+  const state=explanationQueue.states.get(id);
+  const status=state?.status;
+  const label=state?.stale ? 'Outdated · based on earlier code' : status==='ready' ? 'AI explanation · check against observed behavior' : status==='loading' ? `${state.stage||'Preparing explanation'}…` : status==='error' ? 'Explanation unavailable' : explanationConsent ? explanationQueue.enabled ? 'Queued · prioritized when selected' : 'Paused · resume to generate this explanation' : 'Basic analysis · AI not started';
+  return `<div class="explanation-label">${esc(label)}</div>${status==='error'?`<p>${esc(state.error)}</p><button class="text-button" data-explanation-retry="${esc(id)}">Retry explanation</button>`:''}${state?.card ? explanationFields(state.card) : status==='loading'||status==='queued'&&explanationConsent ? '<div class="explanation-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>' : '<p>Explore the mapped structure now. Generate AI explanations when you’re ready.</p>'}`;
+}
+function updateExplanations() {
+  updateProjectGate();
+  const strip=$('#explanation-progress');
+  if(!strip || historyOpen || model.kind==='demo')return;
+  const states=[...explanationQueue.states.values()],ready=states.filter(s=>s.status==='ready').length,failed=states.filter(s=>s.status==='error').length;
+  strip.innerHTML=`<span role="status">Graph ready · ${explanationPreparing?'Preparing analysis queue…':`${ready} / ${states.length} explanations ready`}${failed?` · ${failed} unavailable`:''}</span><button class="text-button" id="explanation-start">${explanationQueue.enabled?'Pause explanations':explanationConsent?'Resume explanations':'Generate explanations'}</button><button class="text-button" id="explanation-summary">Explain this ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'}</button>`;
+  $('#explanation-start').disabled=explanationPreparing;
+  strip.insertAdjacentHTML('beforeend',`<div class="explanation-live" role="status" data-explanation-live></div><progress aria-label="Explanation completion" max="${Math.max(states.length,1)}" value="${ready}"></progress>`);
+  updateExplanationClock();
+  if(states.length&&ready===states.length){$('#explanation-start').textContent='Explanations ready';$('#explanation-start').disabled=true;}
+  if(pendingProject){
+    strip.insertAdjacentHTML('beforeend','<div role="status">Project changed · Showing the last fully explained version. No background generation.</div><button class="text-button" id="update-project-explanations">Update explanations</button>');
+    $('#update-project-explanations').onclick=async()=>{
+      const pending=pendingProject;if(!pending)return;
+      try{await installProject(pending.files,pending.name);}catch{cancelProjectGate();toast('Could not prepare the updated project. Reopen the folder to retry.');}
+    };
+  }
+  if(!aiConfig.configured)strip.insertAdjacentHTML('beforeend',`<small role="status">${esc(aiStatusMessage)}</small>`);
+  const complete=allExplanationsReady(explanationQueue);
+  strip.hidden=complete&&!pendingProject;
+  if(complete&&pendingProject){
+    strip.querySelectorAll(':scope > span, :scope > progress, :scope > .explanation-live, :scope > small').forEach(el=>el.remove());
+    $('#explanation-start').hidden=true;
+  }
+  $('#explanation-start').onclick=()=>{
+    if(explanationQueue.enabled){explanationQueue.stop();return;}
+    if(explanationConsent){for(const s of explanationQueue.states.values())if(s.status==='error')s.status='queued';explanationQueue.start();return;}
+    showExplanationConsent();
+  };
+  $('#explanation-summary').onclick=()=>{
+    const id=explanationScope();explanationQueue.prioritize([id]);
+    modal(`<h2>${esc(selectedWorkflow?model.workflows.find(w=>w.id===selectedWorkflow)?.name||'Workflow':boundaryScope?.title||model.name)}</h2><div data-explanation-card="${esc(id)}"></div>`);updateExplanations();
+  };
+  document.querySelectorAll('[data-explanation-card]').forEach(el=>el.innerHTML=explanationCard(el.dataset.explanationCard));
+  document.querySelectorAll('.generated-explanation').forEach(el=>{
+    if(explanationQueue.states.get(el.dataset.explanationCard)?.status==='loading')el.insertAdjacentHTML('beforeend','<p class="explanation-live" data-explanation-live></p>');
+    if(!complete)el.insertAdjacentHTML('beforeend',`<button class="text-button" data-explanation-control>${explanationQueue.enabled?'Pause explanations':explanationConsent?'Resume explanations':'Generate explanations'}</button>`);
+    if(explanationQueue.states.get(el.dataset.explanationCard)?.status==='ready')el.insertAdjacentHTML('beforeend',`<button class="text-button" data-explanation-regenerate="${esc(el.dataset.explanationCard)}">Regenerate explanation</button>`);
+  });
+  document.querySelectorAll('[data-explanation-regenerate]').forEach(el=>el.onclick=()=>{
+    if(!explanationConsent)return showExplanationConsent();
+    const state=explanationQueue.states.get(el.dataset.explanationRegenerate);state.status='queued';state.stale=true;
+    explanationQueue.prioritize([el.dataset.explanationRegenerate]);explanationQueue.start();updateExplanations();
+  });
+  document.querySelectorAll('[data-explanation-control]').forEach(el=>el.onclick=()=>$('#explanation-start').click());
+  document.querySelectorAll('[data-explanation-retry]').forEach(el=>el.onclick=()=>{
+    if(!explanationConsent)return showExplanationConsent();explanationQueue.retry(el.dataset.explanationRetry);
+  });
+}
+function updateExplanationClock(){document.querySelectorAll('[data-explanation-live]').forEach(el=>el.textContent=explanationConsent?explanationProgress(explanationQueue):'Ready to start · no code sent');}
+setInterval(updateExplanationClock,1000);
+async function prepareExplanations(resume=false) {
+  const version=projectLoadVersion,sourceModel=model;
+  explanationPreparing=true;updateExplanations();
+  await checkAI();
+  if(version!==projectLoadVersion)return;
+  await explanationQueue.setProject(sourceModel,explanationJobs(sourceModel,systemGraph(sourceModel).items),aiConfig,{resume});
+  if(version!==projectLoadVersion)return;
+  explanationPreparing=false;updateExplanations();
+}
+async function showExplanationConsent() {
+  if(!await checkAI()){showSettings();return;}
+  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>Generate project explanations?</h2><p class="modal-intro">Your graph is ready. AI explanations will load in the background while you explore.</p><div class="privacy-note"><p>Send core JavaScript/TypeScript implementation, names, paths, and related dependency context from this project to <strong>${esc(new URL(aiConfig.url).hostname)}</strong>, using ${esc(aiConfig.model)}. Future edits in this open project are included. Provider charges may apply. Source may contain sensitive information: review your project before proceeding.</p></div><p>Generated explanations are cached on this device. Source and your API key are not stored in the cache. Pause at any time. Switching projects or providers requires approval again.</p><button class="primary-button" id="approve-explanations">Approve and start analysis</button>`);
+  $('#approve-explanations').onclick=()=>{explanationConsent=true;$('#modal').close();explanationQueue.start();updateExplanations();};
+}
 const layerNames = {
   controller: "Entry points",
   service: "Business logic",
@@ -271,6 +381,7 @@ function showCommit(index) {
   document.querySelector('[data-commit].current')?.scrollIntoView({block:"nearest",inline:"nearest"});
 }
 function openHistory() {
+  explanationQueue.stop();
   if(historyOpen) return;
   liveModel = model; historyOpen = true; historyPaused = false;
   mode = "overview"; architectureView = false;
@@ -336,6 +447,14 @@ function render() {
   $("#app").innerHTML =
     `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${architectureView ? "Architecture overview" : workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="level-lock" aria-label="Lock detail level" aria-pressed="false"></button><span class="control-divider"></span><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("scan")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
   if (architectureView) $(".view-tabs").innerHTML = '<span class="architecture-caption">Applications · Data stores · External systems</span>';
+  if(!historyOpen && model.kind!=='demo'){
+    $('.canvas-toolbar').insertAdjacentHTML('afterend','<div class="explanation-progress" id="explanation-progress"></div>');
+    $('.map-tools').insertAdjacentHTML('afterbegin','<button class="icon-button" id="open-project-summary" aria-label="Read overview explanation" title="Read overview explanation">'+icon('book-open')+'</button>');
+    $('#open-project-summary').onclick=()=>$('#explanation-summary').click();
+    const workflow=model.workflows.find(w=>w.id===selectedWorkflow);
+    explanationQueue.prioritize([explanationScope(),...(workflow?.nodes||[])]);
+    updateExplanations();
+  }
   $(".canvas-context").firstElementChild.classList.remove("on");
   $(".canvas-context").childNodes[1].textContent = architectureView
     ? model.kind === "demo" ? "Curated sample boundaries" : "Inferred boundaries · runtime not verified"
@@ -710,7 +829,29 @@ function renderInspector() {
           `<button class="related-node" data-related="${esc(m.id)}">${icon(m.icon)}${esc(m.title)}${icon("arrow-up-right")}</button>`,
       )
       .join("") || '<p class="muted">No outgoing dependencies mapped.</p>'
-  }</section><div class="ai-section"><div>${icon("sparkles")}<strong>Ask about this ${selectedFn !== null ? "function" : "component"}</strong></div><p>Get a focused explanation of its behavior.</p><form id="ask-form"><input id="ask-input" aria-label="Ask about the selected component" placeholder="What happens if this fails?"/><button aria-label="Ask AI" title="Ask AI">${icon("arrow-up")}</button></form><small>${aiConfig.key ? "AI connected · selected code sent on request" : "Connect your AI provider in settings"}</small><div id="ai-answer" class="ai-answer" ${ai ? "" : "hidden"}>${ai ? answerMarkup(ai) : ""}</div></div></div>`;
+  }</section><div class="ai-section"><div>${icon("sparkles")}<strong>Ask about this ${selectedFn !== null ? "function" : "component"}</strong></div><p>Get a focused explanation of its behavior.</p><form id="ask-form"><input id="ask-input" aria-label="Ask about the selected component" placeholder="What happens if this fails?"/><button aria-label="Ask AI" title="Ask AI">${icon("arrow-up")}</button></form><small>${aiConfig.configured ? "DeepSeek configured · selected code sent on request" : "DeepSeek uses server configuration · check AI status in settings"}</small><div id="ai-answer" class="ai-answer" ${ai ? "" : "hidden"}>${ai ? answerMarkup(ai) : ""}</div></div></div>`;
+  const id=fn?.id||n.id,hasGenerated=!historyOpen&&model.kind!=='demo';
+  const structural={purpose:plainBehavior(detail.summary||n.summary),uncertainty:model.kind==='demo'?'Curated sample behavior; not extracted from a repository.':'Static structure only; dynamic behavior may be missing.'};
+  behaviorCard(detail,model.kind==='demo').forEach(([,values],i)=>structural[CARD_FIELDS[i+1]]=values.map(plainBehavior).join(' · '));
+  const summary=panel.querySelector('.detail-summary');
+  summary.insertAdjacentHTML('beforebegin',`<div class="detail-tabs" role="tablist" aria-label="Explanation source"><button role="tab" id="detail-ai-tab" aria-controls="detail-ai-panel" data-detail-tab="ai">AI explanation</button><button role="tab" id="detail-structure-tab" aria-controls="detail-structure-panel" data-detail-tab="structure">Structural analysis</button></div><section id="detail-ai-panel" role="tabpanel" aria-labelledby="detail-ai-tab">${hasGenerated?`<section class="generated-explanation" data-explanation-card="${esc(id)}"></section>`:'<p class="evidence-note">No generated AI card for this sample or historical snapshot. Use Structural analysis to inspect its available behavior.</p>'}</section><section id="detail-structure-panel" role="tabpanel" aria-labelledby="detail-structure-tab"><p class="explanation-label">${model.kind==='demo'?'Curated sample':'Basic structural analysis'}</p>${explanationFields(structural)}</section>`);
+  summary.remove();
+  const oldBehavior=panel.querySelector('.behavior-card');
+  if(oldBehavior.nextElementSibling?.classList.contains('evidence-note'))oldBehavior.nextElementSibling.remove();
+  oldBehavior.remove();
+  panel.querySelector('#detail-ai-panel').append(panel.querySelector('.ai-section'));
+  let activeTab=hasGenerated?detailExplanationTab:'structure';
+  const selectTab=(tab,focus=false)=>{
+    activeTab=tab;detailExplanationTab=tab;
+    panel.querySelectorAll('[data-detail-tab]').forEach(button=>{const active=button.dataset.detailTab===tab;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;if(active&&focus)button.focus();});
+    panel.querySelector('#detail-ai-panel').hidden=tab!=='ai';panel.querySelector('#detail-structure-panel').hidden=tab!=='structure';
+  };
+  panel.querySelectorAll('[data-detail-tab]').forEach(button=>{
+    button.onclick=()=>selectTab(button.dataset.detailTab);
+    button.onkeydown=event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();selectTab(event.key==='Home'?'ai':event.key==='End'?'structure':activeTab==='ai'?'structure':'ai',true);}};
+  });
+  selectTab(activeTab);
+  if(hasGenerated){explanationQueue.prioritize([id]);updateExplanations();}
   $("#close-inspector").onclick = () => {
     selectedNode = null;
     selectedFn = null;
@@ -800,10 +941,7 @@ function renderEdgeInspector(detail) {
 }
 async function askAI(question, n, fn) {
   if (!question.trim()) return;
-  if (!aiConfig.key) {
-    showSettings();
-    return;
-  }
+  if (!await checkAI()) {showSettings();return;}
   const answer = $("#ai-answer"),
     cacheKey = `${n.id}:${selectedFn}`;
   answer.hidden = false;
@@ -822,12 +960,11 @@ async function askAI(question, n, fn) {
         ? { ...fn, component: n.title }
         : { ...n };
     const r = await fetch(
-      aiConfig.url.replace(/\/$/, "") + "/chat/completions",
+      '/api/ai/chat',
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${aiConfig.key}`,
         },
         body: JSON.stringify({
           model: aiConfig.model,
@@ -841,13 +978,10 @@ async function askAI(question, n, fn) {
           ],
           max_tokens: 550,
         }),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(100000),
       },
     );
-    if (!r.ok)
-      throw new Error(
-        `Provider returned ${r.status}. Check your model, key, and endpoint.`,
-      );
+    if (!r.ok) {const detail=await r.json().catch(()=>({}));throw new Error(detail.error||`DeepSeek request failed (${r.status}).`);}
     const result = await r.json();
     const content = result.choices?.[0]?.message?.content;
     if (!content) throw new Error("The provider returned no explanation.");
@@ -859,7 +993,7 @@ async function askAI(question, n, fn) {
       e.name === "TimeoutError"
         ? "The provider timed out. Try again."
         : e.message === "Failed to fetch"
-          ? "Cannot reach this provider. Its endpoint must allow browser requests (CORS)."
+          ? "Cannot reach the local AI server. Start the app locally and retry."
           : e.message;
   } finally {
     button.disabled = false;
@@ -875,30 +1009,24 @@ function modal(content) {
   d.showModal();
   uiIcons();
 }
-function showSettings() {
-  modal(
-    `<span class="modal-symbol">${icon("sparkles")}</span><h2>Connect your AI</h2><p class="modal-intro">Use an OpenAI-compatible provider for concise, on-demand explanations.</p><form id="settings-form"><label>Provider base URL<input name="url" type="url" required value="${esc(aiConfig.url)}"/></label><label>Model<input name="model" required value="${esc(aiConfig.model)}"/></label><label>API key<input name="key" type="password" required autocomplete="off" placeholder="Your provider API key" value="${esc(aiConfig.key)}"/></label><div class="privacy-note">${icon("lock-keyhole")}<p>Your key stays in memory for this session. Only the selected component’s code is sent when you ask a question. The provider must support browser requests.</p></div><button class="primary-button" type="submit">Save connection ${icon("arrow-right")}</button></form>`,
-  );
-  $("#settings-form").onsubmit = (e) => {
-    e.preventDefault();
-    const data = new FormData(e.target),
-      url = String(data.get("url"));
-    if (
-      !/^https:\/\//.test(url) &&
-      !/^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(url)
-    ) {
-      toast("Use HTTPS for remote providers.");
-      return;
-    }
-    aiConfig = {
-      url,
-      key: String(data.get("key")),
-      model: String(data.get("model")),
-    };
-    $("#modal").close();
-    renderInspector();
-    toast("Connection saved for this session.");
-  };
+let aiStatusMessage='Checking server configuration…';
+async function checkAI() {
+  try {
+    const response=await fetch('/api/ai/status',{cache:'no-store',signal:AbortSignal.timeout(5000)});
+    if(!response.ok)throw new Error('unavailable');
+    const status=await response.json();
+    if(typeof status.configured!=='boolean')throw new Error('unavailable');
+    aiConfig.configured=status.configured;
+    aiConfig.model=status.model||aiConfig.model;
+    aiStatusMessage=status.configured?'DeepSeek is configured on the server. Your key is never sent to the browser.':'DEEPSEEK_API_KEY is not configured. Set it in the server environment or .env.local, then restart the app. The graph remains available.';
+  }catch{aiConfig.configured=false;aiStatusMessage='AI server unavailable. Run the app locally with npm run dev. This static page cannot read environment variables.';}
+  return aiConfig.configured;
+}
+async function showSettings() {
+  await checkAI();
+  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>DeepSeek status</h2><p class="modal-intro" role="status">${esc(aiStatusMessage)}</p><p>Model: ${esc(aiConfig.model)}</p><div class="privacy-note"><p>Authentication uses the server’s DEEPSEEK_API_KEY. No key entry is needed here. Background analysis still requires approval before sending project code.</p></div><button class="text-button" id="refresh-ai-status">Check again</button><button class="text-button" id="clear-explanations">Clear cached explanations on this device</button>`);
+  $('#refresh-ai-status').onclick=showSettings;
+  $('#clear-explanations').onclick=()=>{explanationQueue.cache.clear();toast('Cached explanations cleared.');};
 }
 function showConnect() {
   modal(
@@ -907,6 +1035,7 @@ function showConnect() {
   $("#choose-folder").onclick = pickFolder;
   $("#snapshot-folder").onclick = () => $("#folder-input").click();
   $("#load-demo").onclick = () => {
+    explanationQueue.stop();explanationConsent=false;
     stopWatching();
     layoutPositions.clear();
     model = createDemo();
@@ -924,6 +1053,7 @@ function showConnect() {
   };
 }
 function stopWatching() {
+  pendingProject=null;
   clearInterval(liveTimer);
   clearTimeout(simulationTimer);
   liveTimer = null;
@@ -951,15 +1081,24 @@ async function readFolder(handle, prefix = "") {
   return files;
 }
 async function installProject(files, name, watch = false) {
+  files=orderedFiles(files);
+  if(!watch){pendingProject=null;baseline=sourceSignature(files);}
+  const version=watch?projectLoadVersion:++projectLoadVersion;
+  if(!watch){projectGate=true;projectGatePhase='mapping';explanationPreparing=true;explanationQueue.stop();explanationQueue.states.clear();explanationConsent=false;showProjectGate();}
+  if($('#import-progress'))$('#import-progress').textContent='Mapping your project…';
+  await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
   const { analyzeFiles, diffModels } = await import("./analyzer.js");
+  if(version!==projectLoadVersion)return false;
   const next = analyzeFiles(files, name);
   if (!next.nodes.length) {
+    if(projectGate)cancelProjectGate();
     toast(
       "No supported functions found. Choose a JavaScript or TypeScript application.",
     );
     return false;
   }
   if (!watch) { layoutPositions.clear(); historyData = null; }
+  const explanationChanged=!watch||JSON.stringify(model.nodes.map(n=>[n.id,n.fingerprint]))!==JSON.stringify(next.nodes.map(n=>[n.id,n.fingerprint]));
   model = watch ? diffModels(model, next) : next;
   if (!watch) selectedEdge = null;
   aiCache.clear();
@@ -977,16 +1116,24 @@ async function installProject(files, name, watch = false) {
   }
   render();
   if (!watch) fitGraph();
+  if(explanationChanged)await prepareExplanations(false);
+  if(version!==projectLoadVersion)return false;
+  if(!watch){projectGatePhase=[...explanationQueue.states.values()].every(s=>s.status==='ready')?'generating':'consent';updateProjectGate();}
   return true;
 }
 async function scanFolder(watch = false) {
-  if (!folderHandle || scanBusy || historyOpen) return;
+  if (!folderHandle || scanBusy || historyOpen || watch&&projectGate) return;
   scanBusy = true;
   try {
+    const version=projectLoadVersion,handle=folderHandle;
     const files = await readFolder(folderHandle);
-    if(historyOpen) return;
-    const signature = files.map((f) => f.path + "|" + f.text).join("\0");
-    if (watch && signature === baseline) return;
+    if(historyOpen||version!==projectLoadVersion||handle!==folderHandle) return;
+    const signature = sourceSignature(files);
+    if(watch){
+      const next=signature===baseline?null:{files:orderedFiles(files),name:folderHandle.name,signature};
+      if(next?.signature!==pendingProject?.signature){pendingProject=next;updateExplanations();}
+      return;
+    }
     baseline = signature;
     await installProject(files, folderHandle.name, watch);
   } catch (e) {
@@ -1209,6 +1356,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "0" && !e.target.matches("input,textarea")) fitGraph();
 });
 render();
+checkAI();
 requestAnimationFrame(fitGraph);
 window.addEventListener("resize", () => {
   clearTimeout(window.resizeTimer);

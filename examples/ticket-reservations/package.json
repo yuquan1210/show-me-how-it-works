@@ -1,0 +1,7 @@
+{
+  "name": "ticket-reservations-sample",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "tsc", "start": "node dist/demo.js" },
+  "devDependencies": { "typescript": "^5.9.3" }
+}

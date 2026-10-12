@@ -33,7 +33,7 @@ npm run build # Build static files into dist/
 - Select a node for a compact behavior card: **Receives**, **Checks & branches**, **Changes**, **Returns**, and **If it fails**. Missing evidence stays explicitly unknown.
 - Click a connection in Components or Functions to inspect its purpose, expected information/results, side effects, and failure uncertainty. Destination inputs are not verified call arguments. Imported purposes are inferred; import-only dependencies are labeled as unknown. Overview and Architecture connections are not selectable.
 - Choose **Open project** to analyze a local JavaScript/TypeScript folder. Supported Chromium browsers can watch it for changes; other browsers import a snapshot.
-- Optionally connect an OpenAI-compatible provider in settings for focused AI explanations. Its endpoint must allow browser requests (CORS).
+- AI explanations use DeepSeek through a local server endpoint. Settings show configuration status, never a key-entry prompt.
 
 ## Replay commit history
 
@@ -55,11 +55,25 @@ Then choose **Import Git history** and select that file. The exporter reads **HE
 
 Exports contain graph summaries, paths, commit subjects, dates, and SHA-256 fingerprints—not source bodies. They may still contain private project information; keep them private. Import stays in browser memory. Limits: 5,000 commits / 80 MB. Unsupported files, tests, config and files larger than 600 KB are excluded. Parsing limitations still apply; this is structural evolution, not verified runtime behavior.
 
+## DeepSeek explanations
+
+Set `DEEPSEEK_API_KEY` in the environment of the process running `npm run dev`, or in an ignored `.env.local` file, and restart the app. Optionally set `DEEPSEEK_MODEL` (default: `deepseek-flash`). See `.env.example`. Do not use a `VITE_` prefix for secrets: the key stays server-side and is never bundled or returned to the browser. AI settings show whether a key is configured; a missing key displays an explanatory message without prompting for entry.
+
+Open a local JavaScript/TypeScript project, choose **Generate explanations**, and approve sending this project's core implementation and dependency context to DeepSeek. The local proxy works with `npm run dev` and `npx vite preview --host 127.0.0.1` after building. Static hosting alone cannot access your machine's environment; a future hosted deployment needs its own authenticated server integration and server secret. The proxy intentionally rejects non-local hosts and cross-origin requests.
+
+Opening a project displays a blocking preparation screen. After code-sharing approval, a progress bar tracks all overview, workflow, area, component and function explanations. The canvas opens only when every card is ready; failed, missing or outdated cards do not count as complete. Pause/resume, retry and cancel are available. Fully cached projects open without new requests. Completion means structured explanations are filled, not that AI claims are factually verified. Later file changes display **Update explanations**; the previous fully explained version remains usable until you choose to update through the blocking preparation screen. Watching does not start AI requests, and file enumeration order does not invalidate explanations.
+
+A comment-free TypeScript sample is available in `examples/ticket-reservations`. Open that folder to test generation. Its README lists expected behavior separately from the source, so those answers are not included in the analysis context.
+
+Generated text and revision hashes are cached on this device (up to 500 cards); raw code and API keys are not cached. Reopening unchanged code reuses cards. Changes to supplied dependency context invalidate the cache when you explicitly update. Use settings to clear the cache. Opening an updated project requires approval before any uncached explanations are generated. File watching never silently regenerates explanations.
+
+Explanations are AI inferences, not verified execution. Context is bounded, so large components and complex dependencies may be incomplete. Server connectivity and provider errors surface recoverable messages. Commit-history snapshots and the curated demo do not trigger background AI analysis. Real API access requires a configured server key and provider balance; automated tests use mock responses.
+
 ## Scope and privacy
 
 The included Commerce app and change demo are curated samples. Imported workflows and labels are inferred from static analysis, not verified runtime traces. Function edges show resolvable calls; dynamic dispatch, framework injection, path aliases, and anonymous callbacks are not fully supported. Tests, configuration, dependencies, and build outputs are excluded.
 
-Imported source and API keys stay in browser memory. Selected implementation code is sent to your configured AI provider only when you submit a question. Refreshing clears the imported project and key. AI explanations may be inaccurate.
+Imported source stays in browser memory until you approve background analysis or submit a question, when selected context passes through the local server to DeepSeek. The API key stays in the server environment. Refreshing clears the imported project, but locally cached explanation text remains until cleared. AI explanations may be inaccurate.
 
 The UI has no raw-source or pseudocode view. Source is used internally for analysis only. AI answers must be structured plain-language cards; malformed responses are rejected and code-like content is withheld. These safeguards are not a semantic proof of arbitrary provider output. All inferred explanations remain labeled as unverified.
 

@@ -15,7 +15,9 @@ export function behaviorCard(detail, curated = false) {
 // Fail closed for obvious source/pseudocode in provider responses or extracted labels.
 export function plainBehavior(value) {
   if (typeof value !== "string" || !value.trim()) return "Not established";
-  if (/```|`|[{};]|=>|\b(?:const|let|var|function|class|import|export)\s+\w|\w+\s*\([^)]*\)|<\/?\w+[^>]*>/.test(value))
+  // Formatting around a name and prose parentheses are not source code.
+  value=value.replace(/`([\w .-]+)`/g,'$1');
+  if (/```|`|[{}]|=>|\b(?:const|let|var|function|class|import|export)\s+\w+\s*(?:[=(:{]|from\b)|\b[\w.$]+\([^)]*\)|<\/?\w+[^>]*>|\breturn\s+[^.]*;/.test(value))
     return "Implementation detail omitted. Ask for a plain-language description.";
   return value.trim();
 }

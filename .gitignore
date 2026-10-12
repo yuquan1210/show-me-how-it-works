@@ -3,4 +3,6 @@ node_modules/
 dist/
 test-results/
 .env
+.env.*
+!.env.example
 *.history.json
