@@ -42,3 +42,11 @@ test('player starts at selected commit, pauses immediately, resumes remaining ti
   assert.deepEqual(steps,[1,2,3]);
   p.select(0);p.play();p.select(2);assert.equal(job,null);assert.equal(p.playing,false);
 });
+test('stop cancels playback and discards paused position and remaining delay',()=>{
+  let time=0,job=null,scheduled=0;const steps=[];
+  const p=new CommitPlayer({count:4,onStep:i=>steps.push(i),onState:()=>{},clock:()=>time,schedule:(fn,ms)=>{job=fn;scheduled=ms;return 1;},cancel:()=>{job=null;}});
+  p.select(2);p.play();time=1000;p.pause();assert.equal(p.remaining,3000);
+  p.stop();assert.equal(p.index,0);assert.equal(p.remaining,4000);assert.equal(p.playing,false);assert.equal(job,null);
+  p.play();assert.equal(scheduled,4000);const lateCallback=job;p.stop();lateCallback();
+  assert.equal(p.index,0);assert.deepEqual(steps,[2]);assert.equal(p.timer,null);
+});

@@ -130,4 +130,5 @@ export class CommitPlayer {
     if(this.index >= this.count-1) {this.playing=false;this.onState(false);} else this.arm();
   },this.remaining); }
   pause() { if(this.timer !== null){this.cancel(this.timer);this.timer=null;this.remaining=Math.max(0,this.remaining-(this.clock()-this.started));} this.playing=false;this.onState(false); }
+  stop() { if(this.timer!==null){this.cancel(this.timer);this.timer=null;}this.playing=false;this.index=0;this.remaining=this.delay;this.onState(false); }
 }

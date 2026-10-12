@@ -10,6 +10,12 @@ import {
   LayoutGrid,
   Radio,
   Play,
+  Pause,
+  Square,
+  PanelsLeftBottom,
+  History,
+  GripHorizontal,
+  BookOpen,
   RefreshCw,
   GitBranch,
   ArrowUpRight,
@@ -22,6 +28,7 @@ import {
   Minus,
   Plus,
   Scan,
+  Maximize2,
   CheckCheck,
   Mouse,
   CircleDot,
@@ -59,6 +66,12 @@ const icons = {
   LayoutGrid,
   Radio,
   Play,
+  Pause,
+  Square,
+  PanelsLeftBottom,
+  History,
+  GripHorizontal,
+  BookOpen,
   RefreshCw,
   GitBranch,
   ArrowUpRight,
@@ -71,6 +84,7 @@ const icons = {
   Minus,
   Plus,
   Scan,
+  Maximize2,
   CheckCheck,
   Mouse,
   CircleDot,
@@ -97,7 +111,7 @@ const icons = {
   Mail,
   HardDrive,
 };
-import { createDemo, applyDemoChange, applyLargeDemoChange } from "./demo.js";
+import { createDemo } from "./demo.js";
 import { frameBounds, zoomStep } from "./camera.js";
 import { connectionStatus, flowDepths } from "./graph-activity.js";
 import {
@@ -109,13 +123,14 @@ import {
 } from "./graph-layout.js";
 import { edgeDetails } from "./edge-details.js";
 import { functionItems } from "./function-graph.js";
-import { architectureGraph } from "./architecture.js";
 import { behaviorCard, plainBehavior, parseBehaviorAnswer } from "./behavior.js";
 import { createDemoHistory, validateHistory, CommitPlayer } from "./history.js";
 import { workflowCatalog, workflowCommit, workflowHistoryUnion, nextWorkflowCommit } from "./workflow-history.js";
 import { ExplanationQueue, ExplanationCache, explanationJobs, explanationProgress, allExplanationsReady, CARD_FIELDS, CARD_LABELS } from './explanations.js';
-import {orderedFiles,sourceSignature} from './project-revision.js';
+import {orderedFiles} from './project-revision.js';
+import {bindFloatingPanel} from './floating-panels.js';
 import "./style.css";
+import "./board.css";
 
 const $ = (s) => document.querySelector(s),
   esc = (s) =>
@@ -139,37 +154,29 @@ let model = createDemo(),
   zoom = 1,
   fittedZoom = 1,
   relativeZoom = 1,
-  levelLocked = false,
-  levelTransitionUntil = 0,
   pan = { x: 0, y: 0 },
   mode = "architecture",
-  architectureView = false,
-  selectedRuntime = null,
   boundaryScope = null,
   changesOnly = false,
   search = "",
-  folderHandle = null,
-  baseline = null,
-  liveTimer = null,
-  simulationTimer = null,
-  simulation = false,
+
   flowStartedAt = 0,
   aiConfig = {
     url: "https://api.deepseek.com",
     configured: false,
     model: "deepseek-flash",
   },
-  aiCache = new Map(),
-  scanBusy = false;
-let historyData = createDemoHistory(), historyOpen = false, historyPlayer = null,
+  aiCache = new Map();
+let historyData = createDemoHistory(), historyOpen = false, historyCommitSelected = false, historyPlayer = null,
   liveModel = null, historyLayoutModel = null, historyPaused = false, historyStartedAt = 0,
   historyPausedAt = 0;
 let historyWorkflows = [], historySelection = null, historyScope = null, skipUnaffected = false,
   historyLastIndex = 0, historySkipped = 0;
 const historyChangeCache = new Map();
+let workflowViewBeforeHistory=null;
 let explanationConsent = false, explanationPreparing = false;
 let projectGate=false,projectGatePhase='mapping',projectLoadVersion=0;
-let pendingProject=null;
+let workflowsVisible=true,timelineVisible=true;
 let detailExplanationTab='ai';
 function explanationFields(card) {
   return CARD_FIELDS.map((key,i)=>`<div class="explanation-field"><strong>${CARD_LABELS[i]}</strong><span>${esc(card[key]||'Not established')}</span></div>`).join('');
@@ -181,10 +188,10 @@ function showProjectGate() {
   updateProjectGate();
 }
 function cancelProjectGate() {
-  pendingProject=null;
+
   projectGate=false;projectLoadVersion++;explanationQueue.stop();explanationConsent=false;
-  document.querySelector('#project-loading')?.remove();stopWatching();model=createDemo();historyData=createDemoHistory();
-  selectedNode=selectedFn=selectedEdge=selectedWorkflow=boundaryScope=null;architectureView=false;mode='architecture';render();fitGraph();
+  document.querySelector('#project-loading')?.remove();model=createDemo();historyData=createDemoHistory();
+  selectedNode=selectedFn=selectedEdge=selectedWorkflow=boundaryScope=null;mode='architecture';render();fitGraph();
 }
 function updateProjectGate() {
   if(!projectGate)return;
@@ -213,27 +220,16 @@ function explanationCard(id) {
 function updateExplanations() {
   updateProjectGate();
   const strip=$('#explanation-progress');
-  if(!strip || historyOpen || model.kind==='demo')return;
+  if(!strip || historyCommitSelected || model.kind==='demo')return;
   const states=[...explanationQueue.states.values()],ready=states.filter(s=>s.status==='ready').length,failed=states.filter(s=>s.status==='error').length;
   strip.innerHTML=`<span role="status">Graph ready · ${explanationPreparing?'Preparing analysis queue…':`${ready} / ${states.length} explanations ready`}${failed?` · ${failed} unavailable`:''}</span><button class="text-button" id="explanation-start">${explanationQueue.enabled?'Pause explanations':explanationConsent?'Resume explanations':'Generate explanations'}</button><button class="text-button" id="explanation-summary">Explain this ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'}</button>`;
   $('#explanation-start').disabled=explanationPreparing;
   strip.insertAdjacentHTML('beforeend',`<div class="explanation-live" role="status" data-explanation-live></div><progress aria-label="Explanation completion" max="${Math.max(states.length,1)}" value="${ready}"></progress>`);
   updateExplanationClock();
   if(states.length&&ready===states.length){$('#explanation-start').textContent='Explanations ready';$('#explanation-start').disabled=true;}
-  if(pendingProject){
-    strip.insertAdjacentHTML('beforeend','<div role="status">Project changed · Showing the last fully explained version. No background generation.</div><button class="text-button" id="update-project-explanations">Update explanations</button>');
-    $('#update-project-explanations').onclick=async()=>{
-      const pending=pendingProject;if(!pending)return;
-      try{await installProject(pending.files,pending.name);}catch{cancelProjectGate();toast('Could not prepare the updated project. Reopen the folder to retry.');}
-    };
-  }
   if(!aiConfig.configured)strip.insertAdjacentHTML('beforeend',`<small role="status">${esc(aiStatusMessage)}</small>`);
   const complete=allExplanationsReady(explanationQueue);
-  strip.hidden=complete&&!pendingProject;
-  if(complete&&pendingProject){
-    strip.querySelectorAll(':scope > span, :scope > progress, :scope > .explanation-live, :scope > small').forEach(el=>el.remove());
-    $('#explanation-start').hidden=true;
-  }
+  strip.hidden=complete;
   $('#explanation-start').onclick=()=>{
     if(explanationQueue.enabled){explanationQueue.stop();return;}
     if(explanationConsent){for(const s of explanationQueue.states.values())if(s.status==='error')s.status='queued';explanationQueue.start();return;}
@@ -272,7 +268,7 @@ async function prepareExplanations(resume=false) {
 }
 async function showExplanationConsent() {
   if(!await checkAI()){showSettings();return;}
-  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>Generate project explanations?</h2><p class="modal-intro">Your graph is ready. AI explanations will load in the background while you explore.</p><div class="privacy-note"><p>Send core JavaScript/TypeScript implementation, names, paths, and related dependency context from this project to <strong>${esc(new URL(aiConfig.url).hostname)}</strong>, using ${esc(aiConfig.model)}. Future edits in this open project are included. Provider charges may apply. Source may contain sensitive information: review your project before proceeding.</p></div><p>Generated explanations are cached on this device. Source and your API key are not stored in the cache. Pause at any time. Switching projects or providers requires approval again.</p><button class="primary-button" id="approve-explanations">Approve and start analysis</button>`);
+  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>Generate project explanations?</h2><p class="modal-intro">Generate explanations before opening the map.</p><div class="privacy-note"><p>Send core JavaScript/TypeScript implementation, names, paths, and related dependency context from this project to <strong>${esc(new URL(aiConfig.url).hostname)}</strong>, using ${esc(aiConfig.model)}. Provider charges may apply. Source may contain sensitive information: review your project before proceeding.</p></div><p>Generated explanations are cached on this device. Source and your API key are not stored in the cache. Pause at any time. Switching projects or providers requires approval again.</p><button class="primary-button" id="approve-explanations">Approve and start analysis</button>`);
   $('#approve-explanations').onclick=()=>{explanationConsent=true;$('#modal').close();explanationQueue.start();updateExplanations();};
 }
 const layerNames = {
@@ -292,27 +288,27 @@ function toast(message) {
   toast.timer = setTimeout(() => $("#toast").classList.remove("show"), 4000);
 }
 function activeWorkflow() {
-  return architectureView || historyOpen ? null : model.workflows.find((w) => w.id === selectedWorkflow);
+  return historyCommitSelected ? null : model.workflows.find((w) => w.id === selectedWorkflow);
 }
 function selectedHistoryEntry() { return historyWorkflows.find(w=>w.id===historySelection) || null; }
 function historySidebar() {
   const index=historyPlayer?.index ?? 0;
-  return `<aside class="sidebar history-sidebar"><button class="map-link" id="exit-history">${icon("arrow-left")} Back to workspace</button>
-    <div class="history-heading"><h2>Workflows</h2><span>Keep a workflow selected as time advances.</span></div>
+  return `<aside class="sidebar history-sidebar" ${workflowsVisible?'':'hidden'}><div class="window-heading"><h2>Workflows</h2><button class="icon-button hide-workflows" aria-label="Hide workflows">${icon("x")}</button></div>
+
     <button class="map-link ${!historySelection?'active':''}" data-history-workflow="">${icon("network")} All workflows</button>
     <div class="workflow-list">${historyWorkflows.map(w=>{
       const version=w.versions[index],first=w.versions.findIndex(Boolean);
-      const label=version ? "Present at this commit" : index<first ? "Not created yet" : "Removed at this point";
-      return `<button class="workflow-item ${historySelection===w.id?'selected':''}" data-history-workflow="${w.id}" aria-pressed="${historySelection===w.id}"><span class="workflow-icon">${icon(w.icon || "workflow")}</span><span class="workflow-copy"><strong>${esc(version?.name || w.name)}</strong><small>${w.uncertain.has(index)?'Identity uncertain':label}</small></span></button>`;
+      const label=version ? "Present" : index<first ? "Not created yet" : "Removed";
+      return `<button class="workflow-item ${historySelection===w.id?'selected':''}" data-history-workflow="${w.id}" title="${esc(version?.name || w.name)}" aria-pressed="${historySelection===w.id}"><span class="workflow-copy"><strong>${esc(version?.name || w.name)}</strong><small>${w.uncertain.has(index)?'Identity uncertain':label}</small></span></button>`;
     }).join('') || '<p class="sidebar-note">Import Git history to explore workflows over time.</p>'}</div>
-    <div class="history-import"><button class="activity-button" id="import-history">${icon("folder-open")} Import Git history</button><button class="text-button" id="history-help">How to export history</button><p>Imports stay in this browser. No raw code is displayed.</p></div></aside>`;
+    </aside>`;
 }
 function historyTimeline() {
-  const commits=historyData?.commits || [],index=historyPlayer?.index ?? 0;
-  return `<section class="history-timeline" aria-label="Commit timeline"><div class="timeline-controls"><strong>Commit history</strong><span class="timeline-source">${historyData?.kind==="demo"?"Illustrative sample · not Git":historyData?esc(historyData.branch)+" · first-parent":"Import history to begin"}</span>
-    ${commits.length?`<button class="activity-button" id="history-play"></button><div class="history-steps"><button id="history-prev" aria-label="Previous commit" ${index===0?'disabled':''}>${icon("arrow-left")}</button><span id="history-position" aria-live="polite">${index+1} / ${commits.length}</span><button id="history-next" aria-label="Next commit" ${index===commits.length-1?'disabled':''}>${icon("arrow-right")}</button></div><label class="history-speed">Pace<select id="history-speed"><option value="4000">4 seconds</option><option value="8000" ${historyPlayer?.delay===8000?'selected':''}>8 seconds</option><option value="12000" ${historyPlayer?.delay===12000?'selected':''}>12 seconds</option></select></label><label class="skip-control"><input type="checkbox" id="history-skip" ${skipUnaffected?'checked':''}/>Skip unaffected commits</label>`:''}</div>
-    <div class="timeline-note" id="history-note" role="status"></div>
-    <div class="commit-list" aria-label="Commits, oldest to newest">${commits.map((c,i)=>`<button class="commit-item ${i===index?'current':''}" data-commit="${i}" aria-current="${i===index?'step':'false'}"><span class="commit-number">${i+1}</span><span><strong>${esc(plainBehavior(c.message))}</strong><small>${esc(c.sha.slice(0,10))} · ${esc(c.date.slice(0,10))}${i===commits.length-1?' · Latest':''}</small></span></button>`).join('')}</div></section>`;
+  const commits=historyData?.commits || [],index=historyCommitSelected ? historyPlayer.index : -1;
+  return `<section class="history-timeline" aria-label="Commit timeline" ${timelineVisible?'':'hidden'}><div class="window-heading"><h2>History</h2><div><button class="icon-button" id="import-history" aria-label="Import Git history" title="Import Git history">${icon("folder-open")}</button><button class="icon-button" id="history-help" aria-label="History import help" title="History import help">${icon("circle-help")}</button><button class="icon-button" id="hide-timeline" aria-label="Hide timeline" title="Hide timeline">${icon("x")}</button></div></div><div class="timeline-controls"><span class="timeline-source">${historyData?.kind==="demo"?"Sample commits":historyData?esc(historyData.branch)+" · first-parent":"Import history to begin"}</span>
+    ${commits.length?`<div class="playback-controls" role="group" aria-label="Playback"><button class="icon-button" id="history-play" aria-label="Play" title="Play">${icon("play")}</button><button class="icon-button" id="history-pause" aria-label="Pause" title="Pause" disabled>${icon("pause")}</button><button class="icon-button" id="history-stop" aria-label="Stop" title="Stop">${icon("square")}</button></div><div class="history-steps"><button id="history-prev" aria-label="Previous commit" ${index===0?'disabled':''}>${icon("arrow-left")}</button><span id="history-position" aria-live="polite">${index+1} / ${commits.length}</span><button id="history-next" aria-label="Next commit" ${index===commits.length-1?'disabled':''}>${icon("arrow-right")}</button></div><label class="history-speed">Pace<select id="history-speed"><option value="4000">4 seconds</option><option value="8000" ${historyPlayer?.delay===8000?'selected':''}>8 seconds</option><option value="12000" ${historyPlayer?.delay===12000?'selected':''}>12 seconds</option></select></label><label class="skip-control"><input type="checkbox" id="history-skip" ${skipUnaffected?'checked':''}/>Skip unchanged</label>`:''}</div>
+    <div class="current-commit" id="history-current-commit"></div><div class="timeline-note" id="history-note" role="status"></div>
+    <div class="commit-list" aria-label="Commits, oldest to newest">${commits.map((c,i)=>`<button class="commit-item ${i===index?'current':''}" data-commit="${i}" title="${esc(plainBehavior(c.message))}" aria-current="${i===index?'step':'false'}"><span class="commit-number">${i+1}</span><span class="commit-copy"><strong>${esc(plainBehavior(c.message))}</strong><small>${esc(c.sha.slice(0,10))} · ${esc(c.date.slice(0,10))}${i===commits.length-1?' · Latest':''}</small></span></button>`).join('')}</div></section>`;
 }
 function historyNext(index) {
   return nextWorkflowCommit(index,historyData.commits.length,i=>{
@@ -345,24 +341,32 @@ function syncHistoryState() {
   canvas.classList.add("history-canvas");
   canvas.classList.toggle("history-paused",historyPaused);
   const button = $("#history-play");
-  if(button) { button.textContent = historyPlayer.count === 1 ? "Only one commit" : historyPlayer.playing ? "Pause" : historyPlayer.index===historyPlayer.count-1 ? "Replay from first commit" : "Play from this commit"; button.disabled=historyPlayer.count===1; button.setAttribute("aria-label",button.textContent); }
+  if(button) {button.disabled=historyPlayer.playing||(historyCommitSelected&&historyPlayer.count<2);button.setAttribute('aria-label','Play');button.title='Play';}
+  if($('#history-pause'))$('#history-pause').disabled=!historyPlayer.playing;
+  if(!historyCommitSelected) {
+    canvas.classList.remove('history-canvas','history-paused');
+    $('#history-position').textContent=`— / ${historyPlayer.count}`;
+    $('#history-prev').disabled=true;$('#history-next').disabled=true;
+    $('#history-note').textContent='Choose a commit or press Play.';
+    return;
+  }
   const commit = historyData?.commits[historyPlayer?.index];
   if (!commit) return;
   const counts = ["added","modified","removed"].map(status => `${model.nodes.filter(n=>n.status===status).length} ${status}`).join(" · ");
-  $(".canvas-context").childNodes[1].textContent = `${commit.sha.slice(0,10)} · ${model.nodes.some(n=>n.status!=="unchanged") ? counts : "No mapped core-logic changes"}${commit.skippedFiles ? ` · ${commit.skippedFiles} large files excluded` : ""}`;
+  $(".canvas-context").childNodes[1].textContent = "";
   $("#node-count").textContent = `${model.nodes.filter(n=>n.status!=="removed").length} components at this commit`;
   const h = $(".map-header h1");
   h.textContent = historyScope?.name || "All workflows";
-  h.title = plainBehavior(commit.message);
+  h.title = h.textContent;
   const states={"not-created":"This workflow doesn’t exist yet.","removed-now":"Workflow removed in this commit. Previous members remain as ghosts.","removed":"This workflow was removed.","created":"Workflow created in this commit."};
   const impact=historyScope && historySelection
-    ? `${historyScope.within} changed in mapped workflow · ${historyScope.possible} may affect it · ${historyScope.connections} connections changed`
+    ? `${historyScope.within} changed · ${historyScope.possible} possible · ${historyScope.connections} connections`
     : counts;
   const notes=[states[historyScope?.state],historyScope?.uncertain?"Identity uncertain: possible rename or split. Selection was not switched.":historyScope?.matched?"Moved entry matched by a unique unchanged fingerprint.":historyScope?.renamed?"Workflow renamed; selection retained.":null,
-    !historyScope?.changed?"No mapped changes for this selection.":null,
+    !historyScope?.changed?"No changes.":null,
     historySkipped?`Skipped ${historySkipped} unaffected commit${historySkipped===1?'':'s'}.`:null].filter(Boolean);
   $("#history-note").textContent=[impact,...notes].join(" · ");
-  $(".canvas-context").childNodes[1].textContent=commit.sha.slice(0,10)+" · "+plainBehavior(commit.message);
+  $("#history-current-commit").innerHTML=`<code>${esc(commit.sha.slice(0,10))}</code><strong>${esc(plainBehavior(commit.message))}</strong>`;
   if(!model.nodes.length && historySelection) {
     $("#empty-search").hidden=false;
     $("#empty-search").textContent=states[historyScope?.state] || "No mapped logic in this workflow at this commit.";
@@ -370,45 +374,56 @@ function syncHistoryState() {
 }
 function showCommit(index) {
   if(!historyData) return;
+  const firstSelection=!historyCommitSelected;
+  if(!historyCommitSelected) {
+    historySelection=historyWorkflows.find(w=>w.versions.some(v=>v?.id===selectedWorkflow))?.id || null;
+    historyLayoutModel=workflowHistoryUnion(historyData,selectedHistoryEntry());
+  }
+  historyCommitSelected=true;
   historySkipped=historyPlayer?.playing ? Math.max(0,index-historyLastIndex-1) : 0;
   historyLastIndex=index;
   historyScope=workflowCommit(historyData,index,selectedHistoryEntry());
   model=historyScope.model;
-  selectedNode = selectedFn = selectedEdge = selectedRuntime = boundaryScope = null;
+  selectedNode = selectedFn = selectedEdge = boundaryScope = null;
   selectedWorkflow = null; changesOnly = false; search = ""; aiCache.clear();
   historyPaused = false; historyStartedAt = performance.now();
   render();
+  if(firstSelection)fitGraph();
   document.querySelector('[data-commit].current')?.scrollIntoView({block:"nearest",inline:"nearest"});
 }
 function openHistory() {
   explanationQueue.stop();
   if(historyOpen) return;
-  liveModel = model; historyOpen = true; historyPaused = false;
-  mode = "overview"; architectureView = false;
-  selectedNode = selectedFn = selectedEdge = boundaryScope = selectedWorkflow = null;
+  workflowViewBeforeHistory={selectedWorkflow,selectedNode,selectedFn,selectedEdge,boundaryScope,mode,search,changesOnly,zoom,fittedZoom,relativeZoom,pan:{...pan}};
+  liveModel = model; historyOpen = true; historyCommitSelected=false; historyPaused = false;
   if(historyData) {
     prepareHistory();
-    historyPlayer.select(0);
-    fitGraph();
-  } else {render();fitGraph();}
+  }
+  render();
 }
 function exitHistory() {
-  historyPlayer?.pause(); historyOpen=false; historyPlayer=null; historyLayoutModel=null;
-  model=liveModel || model; liveModel=null; selectedNode=selectedFn=selectedEdge=selectedRuntime=boundaryScope=null;
-  render();fitGraph();
+  if(!historyOpen)return;
+  historyOpen=false;historyCommitSelected=false;historyPlayer?.stop();historyPlayer=null;historyLayoutModel=null;
+  historyScope=null;historySelection=null;historyPaused=false;historyBounds=[];historySkipped=0;historyLastIndex=0;skipUnaffected=false;
+  model=liveModel||model;liveModel=null;
+  const view=workflowViewBeforeHistory;workflowViewBeforeHistory=null;
+  if(view)({selectedWorkflow,selectedNode,selectedFn,selectedEdge,boundaryScope,mode,search,changesOnly,zoom,fittedZoom,relativeZoom,pan}=view);
+  else {selectedNode=selectedFn=selectedEdge=boundaryScope=selectedWorkflow=null;mode='architecture';}
+  flowStartedAt=performance.now();render();if(!view)fitGraph();
 }
 function bindHistory() {
   $("#open-history")?.addEventListener("click",openHistory);
-  $("#exit-history")?.addEventListener("click",exitHistory);
+  $("#history-stop")?.addEventListener("click",exitHistory);
   document.querySelectorAll("[data-history-workflow]").forEach(button=>button.onclick=()=>{if(historyData)chooseHistoryWorkflow(button.dataset.historyWorkflow);});
   $("#history-skip")?.addEventListener("change",e=>{skipUnaffected=e.target.checked;syncHistoryState();});
   $("#history-play")?.addEventListener("click",()=>{
-    if(historyPlayer.playing){historyPlayer.pause();freezeHistoryMotion();return;}
-    if(historyPlayer.index===historyPlayer.count-1) {historyPlayer.select(0);fitGraph();}
+    if(historyPlayer.playing)return;
+    if(!historyCommitSelected || historyPlayer.index===historyPlayer.count-1) {historyPlayer.select(0);fitGraph();}
     if(historyPaused){historyStartedAt+=performance.now()-historyPausedAt;historyPaused=false;}
     if (historyPlayer.remaining === historyPlayer.delay && !historyPaused) { historyStartedAt=performance.now(); drawGraph(); }
     historyPlayer.play(); syncHistoryState();
   });
+  $('#history-pause')?.addEventListener('click',()=>{historyPlayer?.pause();freezeHistoryMotion();});
   document.querySelectorAll("[data-commit]").forEach(button=>button.onclick=()=>{historyPlayer.select(Number(button.dataset.commit));});
   $("#history-prev")?.addEventListener("click",()=>historyPlayer.select(historyPlayer.index-1));
   $("#history-next")?.addEventListener("click",()=>historyPlayer.select(historyPlayer.index+1));
@@ -427,27 +442,45 @@ function bindHistory() {
       const next=validateHistory(JSON.parse(await file.text()));
       if(!historyOpen) return;
       historyPlayer?.pause();
-      historyData=next; prepareHistory();
-      historyPlayer.select(0);fitGraph();toast(`Loaded ${next.commits.length} commits. Select a starting point and press Play.`);
+      model=liveModel || model;
+      if(workflowViewBeforeHistory)({selectedWorkflow,selectedNode,selectedFn,selectedEdge,boundaryScope,mode,search,changesOnly,zoom,fittedZoom,relativeZoom,pan}=workflowViewBeforeHistory);
+      historyCommitSelected=false;historyBounds=[];historyPaused=false;
+      historyData=next; prepareHistory();render();toast(`Loaded ${next.commits.length} commits. Select a starting point and press Play.`);
     } catch(error){toast(error instanceof SyntaxError ? "This file is not valid JSON." : error.message);}
   };
 }
 function header() {
-  return `<header class="topbar"><a class="brand" href="#" aria-label="Show Me How It Works home"><span class="brand-mark">${icon("network")}</span><span>Show Me How It Works<span class="beta">BETA</span></span></a><div class="project-switch"><span class="project-avatar">${icon("box")}</span><span id="project-name">${esc(model.name)}</span><span class="project-kind">${model.kind === "demo" ? "Sample project" : "Local project"}</span></div><div class="header-actions"><button class="icon-button" id="settings" title="AI explanation settings" aria-label="AI explanation settings">${icon("sliders-horizontal")}</button><button class="connect-button" id="connect">${icon("folder-open")} Open project</button></div></header>`;
+  return `<header class="topbar"><a class="brand" href="#" aria-label="Show Me How It Works home"><span class="brand-mark">${icon('network')}</span></a><div class="project-switch"><strong>${esc(model.name)}</strong><small>${model.kind==='demo'?'Sample':'Project'}</small></div><div class="mode-switch" aria-label="Workspace mode"><button class="active" aria-pressed="true">Code</button><button disabled title="Plan mode · coming later">Plan</button></div><button class="icon-button" id="connect" aria-label="Open project" title="Open project">${icon('folder-open')}</button><button class="icon-button" id="settings" aria-label="AI settings" title="AI settings">${icon('sliders-horizontal')}</button></header><nav class="board-dock" aria-label="Panels"><button class="icon-button ${workflowsVisible?'active':''}" id="toggle-workflows" aria-label="Toggle workflows" aria-pressed="${workflowsVisible}" title="Workflows">${icon('workflow')}</button><button class="icon-button ${historyOpen?'active':''}" id="toggle-history" aria-pressed="${historyOpen}" aria-label="Toggle commit history" title="Commit history">${icon('history')}</button></nav>`;
 }
 function sidebar() {
-  if (historyOpen) return historySidebar();
-  const changed = model.nodes.filter((n) => n.status !== "unchanged");
-  return `<aside class="sidebar"><div class="sidebar-top"><span class="eyebrow">WORKSPACE</span><button class="map-link ${!selectedWorkflow && !architectureView ? "active" : ""}" id="all-map">${icon("network")} All workflows <span>${model.nodes.length}</span></button><button class="map-link ${architectureView ? "active" : ""}" id="architecture-map">${icon("boxes")} Architecture</button><button class="map-link" id="open-history">${icon("git-branch")} Commit history</button></div><div class="workflow-heading"><span class="eyebrow">WORKFLOWS</span><span class="count">${model.workflows.length}</span></div><div class="workflow-list">${model.workflows.length ? model.workflows.map((w, i) => `<button class="workflow-item ${!architectureView && w.id === selectedWorkflow ? "selected" : ""}" data-workflow="${esc(w.id)}"><span class="workflow-icon">${icon(w.icon)}</span><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components <span>·</span> ${i === 0 ? "Core flow" : "Workflow"}</small></span>${w.id === selectedWorkflow ? icon("chevron-right") : ""}</button>`).join("") : '<p class="sidebar-note">No entry points found. Explore the application map or open a project with routes or controllers.</p>'}</div><div class="sidebar-bottom"><div class="activity-title"><span class="eyebrow">LIVE CHANGES</span><span class="live-dot ${liveTimer || simulation ? "on" : ""}"></span></div><div class="activity-card">${icon("radio")}<strong>${model.kind === "demo" ? "See a change unfold" : liveTimer ? "Watching your project" : "Your project is mapped"}</strong><p>${model.kind === "demo" ? "Preview how an agent’s changes appear on your map." : liveTimer ? "File changes are reflected automatically." : "Reopen the folder to refresh, or connect live watching in a supported browser."}</p><button id="simulate" class="activity-button">${icon(model.kind === "demo" ? "play" : "refresh-cw")}${model.kind === "demo" ? "Small change demo" : "Refresh project"}</button>${model.kind === "demo" ? `<button id="simulate-large" class="activity-button">${icon("layers")} Large change demo</button><button id="reset-demo" class="text-button">Reset demo</button><small class="demo-scale">Small: 2 components · Large: 13 components</small>` : ""}</div>${changed.length ? `<button class="change-count" id="sidebar-changes">${icon("git-branch")}${changed.length} changed components ${icon("arrow-up-right")}</button>` : ""}<div class="local-note">${icon("shield-check")} ${model.kind === "demo" ? "Explore freely. This is sample data." : "Analysis stays in your browser."}</div></div></aside>`;
+  if(historyCommitSelected)return historySidebar();
+  return `<aside class="sidebar" ${workflowsVisible?'':'hidden'}><div class="window-heading"><h2>Workflows</h2><button class="icon-button hide-workflows" aria-label="Hide workflows">${icon('x')}</button></div><button class="map-link ${!selectedWorkflow?'active':''}" id="all-map">${icon('network')}All workflows</button><div class="workflow-list">${model.workflows.map(w=>`<button class="workflow-item ${w.id===selectedWorkflow?'selected':''}" data-workflow="${esc(w.id)}" title="${esc(w.name)}"><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components</small></span></button>`).join('')||'<p class="sidebar-note">No workflows found.</p>'}</div></aside>`;
+}
+function bindBoardWindows() {
+  bindFloatingPanel($('.sidebar'),'workflows',$('.sidebar .window-heading'));
+  bindFloatingPanel($('.history-timeline'),'history',$('.history-timeline .window-heading'));
+  bindFloatingPanel($('#inspector'),'details',$('#inspector .inspector-header'));
+  bindFloatingPanel($('.canvas-toolbar'),'tools',$('.canvas-toolbar .tool-grip'),{preserveSize:false});
+  bindFloatingPanel($('.topbar'),'project',$('.topbar .project-switch'),{preserveSize:false});
+  bindFloatingPanel($('.map-header'),'title',$('.map-header h1'),{preserveSize:false});
+}
+function bindBoard() {
+  $('.canvas-toolbar').insertAdjacentHTML('afterbegin',`<span class="tool-grip" aria-hidden="true">${icon('grip-horizontal')}</span>`);
+  $('#toggle-workflows').onclick=()=>{workflowsVisible=!workflowsVisible;$('.sidebar').hidden=!workflowsVisible;$('#toggle-workflows').setAttribute('aria-pressed',String(workflowsVisible));$('#toggle-workflows').classList.toggle('active',workflowsVisible);bindBoardWindows();};
+  document.querySelectorAll('.hide-workflows').forEach(button=>button.onclick=()=>$('#toggle-workflows').click());
+  $('#toggle-history').onclick=()=>{
+    if(!historyOpen){timelineVisible=true;openHistory();}
+    else exitHistory();
+  };
+  $('#hide-timeline')?.addEventListener('click',exitHistory);
 }
 function render() {
   if (selectedEdge && !edgeDetails(model, mode, ...selectedEdge))
     selectedEdge = null;
   const workflow = activeWorkflow();
   $("#app").innerHTML =
-    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${architectureView ? "Architecture overview" : workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="level-lock" aria-label="Lock detail level" aria-pressed="false"></button><span class="control-divider"></span><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("scan")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
-  if (architectureView) $(".view-tabs").innerHTML = '<span class="architecture-caption">Applications · Data stores · External systems</span>';
-  if(!historyOpen && model.kind!=='demo'){
+    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
+  if(!historyCommitSelected && model.kind!=='demo'){
     $('.canvas-toolbar').insertAdjacentHTML('afterend','<div class="explanation-progress" id="explanation-progress"></div>');
     $('.map-tools').insertAdjacentHTML('afterbegin','<button class="icon-button" id="open-project-summary" aria-label="Read overview explanation" title="Read overview explanation">'+icon('book-open')+'</button>');
     $('#open-project-summary').onclick=()=>$('#explanation-summary').click();
@@ -455,40 +488,43 @@ function render() {
     explanationQueue.prioritize([explanationScope(),...(workflow?.nodes||[])]);
     updateExplanations();
   }
+  $('.map-header h1').title=$('.map-header h1').textContent;
   $(".canvas-context").firstElementChild.classList.remove("on");
-  $(".canvas-context").childNodes[1].textContent = architectureView
-    ? model.kind === "demo" ? "Curated sample boundaries" : "Inferred boundaries · runtime not verified"
-    : workflow ? model.kind === "demo" ? "Illustrative sample flow · not a runtime trace" : "Inferred workflow · not a runtime trace" : "Core logic · no raw code";
+  $(".canvas-context").childNodes[1].textContent = "";
   bind();
+  bindBoard();
+  if(historyOpen&&!historyData?.commits.length)$('.timeline-controls').insertAdjacentHTML('afterbegin',`<div class="playback-controls" role="group" aria-label="Playback"><button class="icon-button" aria-label="Play" disabled>${icon('play')}</button><button class="icon-button" aria-label="Pause" disabled>${icon('pause')}</button><button class="icon-button" id="history-stop" aria-label="Stop" title="Stop">${icon('square')}</button></div>`);
   bindHistory();
   drawGraph();
   renderInspector();
   if (historyOpen) syncHistoryState();
   uiIcons();
+  bindBoardWindows();
+  $(".workflow-item.selected")?.scrollIntoView({block:"nearest",inline:"nearest"});
 }
 const layoutPositions = new Map();
 let componentBoundaries = [],
   hiddenContextCount = 0;
 function graphItems() {
   const graph =
-    architectureView ? architectureGraph(model) : mode === "overview"
+    mode === "overview"
       ? systemGraph(model)
       : {
           items:
             mode === "functions" ? functionItems(model, layers) : model.nodes,
           edges: mode === "functions" ? model.functionEdges || [] : model.edges,
         };
-  const focused = architectureView ? { ...graph, hidden: 0 } : focusGraph(graph, activeWorkflow() || (boundaryScope ? { nodes: boundaryScope.members } : null));
+  const focused = focusGraph(graph, activeWorkflow() || (boundaryScope ? { nodes: boundaryScope.members } : null));
   hiddenContextCount = focused.hidden;
   const key =
-    (architectureView ? "runtime" : mode) +
+    mode +
     ":" + (boundaryScope?.id || "") +
     (selectedWorkflow || "all") +
     ":" +
     JSON.stringify(focused.edges);
   componentBoundaries = [];
   let items;
-  if (!architectureView && mode === "functions") {
+  if (mode === "functions") {
     const result = functionLayout(focused.items, focused.edges);
     items = result.items;
     componentBoundaries = result.groups;
@@ -502,17 +538,16 @@ function graphItems() {
     new Map(items.map((n) => [n.id, { x: n.x, y: n.y }])),
   );
 
-  if (historyOpen && historyLayoutModel) {
-    const unionGraph = architectureView ? architectureGraph(historyLayoutModel)
-      : mode === "overview" ? systemGraph(historyLayoutModel)
+  if (historyCommitSelected && historyLayoutModel) {
+    const unionGraph = mode === "overview" ? systemGraph(historyLayoutModel)
       : {items: mode === "functions" ? functionItems(historyLayoutModel,layers) : historyLayoutModel.nodes,
          edges: mode === "functions" ? historyLayoutModel.functionEdges : historyLayoutModel.edges};
-    const stable = !architectureView && mode === "functions"
+    const stable = mode === "functions"
       ? functionLayout(unionGraph.items,unionGraph.edges)
       : {items:layoutGraph(unionGraph.items,unionGraph.edges),groups:[]};
     const positions = new Map(stable.items.map(n => [n.id,n]));
     items = items.map(n => ({...n,x:positions.get(n.id)?.x ?? n.x,y:positions.get(n.id)?.y ?? n.y}));
-    if (mode === "functions" && !architectureView)
+    if (mode === "functions")
       componentBoundaries = stable.groups.filter(g => items.some(n => n.parentId === g.id));
     historyBounds = stable.items;
   }
@@ -523,22 +558,21 @@ function drawGraph() {
   const items = graphItems(),
     positions = new Map(items.map((n) => [n.id, n]));
   const entityLabel =
-    architectureView ? "boundaries" : mode === "functions"
+    mode === "functions"
       ? "functions"
       : mode === "overview"
         ? "areas"
         : "components";
   $("#node-count").textContent = `${items.length} ${entityLabel}`;
   $("#search").placeholder =
-    architectureView ? "Find a boundary…" : mode === "overview" ? "Find an area…" : mode === "functions" ? "Find a function…" : "Find a component…";
+    mode === "overview" ? "Find an area…" : mode === "functions" ? "Find a function…" : "Find a component…";
   $("#search").setAttribute(
     "aria-label",
-    architectureView ? "Find a boundary" : mode === "overview" ? "Find an area" : mode === "functions" ? "Find a function" : "Find a component",
+    mode === "overview" ? "Find an area" : mode === "functions" ? "Find a function" : "Find a component",
   );
   $("#empty-search").textContent = `No matching ${entityLabel}`;
   let edges = mode === "functions" ? model.functionEdges || [] : model.edges;
   if (mode === "overview") edges = systemGraph(model).edges;
-  if (architectureView) edges = architectureGraph(model).edges;
   const wf = activeWorkflow();
   const related = (n) =>
     n.group
@@ -569,7 +603,7 @@ function drawGraph() {
   );
   const flowElapsed = (performance.now() - flowStartedAt) / 1000;
   const animateFlow =
-    !historyOpen && !!wf &&
+    !historyCommitSelected && !!wf &&
     flowStartedAt > 0 &&
     flowElapsed < (Math.max(0, ...depths.values()) + 2) * 0.85 &&
     !matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -586,12 +620,12 @@ function drawGraph() {
   $("#world").style.width = maxX + "px";
   $("#world").style.height = maxY + "px";
   $("#world").innerHTML =
-    `${componentBoundaries.map((g) => `<div class="component-boundary" style="left:${g.x}px;top:${g.y}px;width:${g.width}px;height:${g.height}px"><span>${esc(g.title)}</span></div>`).join("")}${hiddenContextCount ? `<button class="context-box" id="show-context" style="left:24px;top:${maxY}px">${hiddenContextCount} other ${entityLabel} collapsed · Show all workflows ${icon("arrow-up-right")}</button>` : ""}<svg class="connections" width="${maxX}" height="${maxY}" aria-hidden="${architectureView || mode === "overview"}"><defs><marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="9.8" markerHeight="9.8" viewBox="0 0 7 7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
+    `${componentBoundaries.map((g) => `<div class="component-boundary" style="left:${g.x}px;top:${g.y}px;width:${g.width}px;height:${g.height}px"><span>${esc(g.title)}</span></div>`).join("")}${hiddenContextCount ? `<button class="context-box" id="show-context" style="left:24px;top:${maxY}px">${hiddenContextCount} other ${entityLabel} collapsed · Show all workflows ${icon("arrow-up-right")}</button>` : ""}<svg class="connections" width="${maxX}" height="${maxY}" aria-hidden="${mode === "overview"}"><defs><marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="9.8" markerHeight="9.8" viewBox="0 0 7 7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="context-stroke"/></marker></defs>${edges
       .map(([a, b], i) => {
         const s = positions.get(a),
           t = positions.get(b);
         if (!s || !t) return "";
-        const d = routeEdge(s, t, items, { compact: !architectureView && mode === "functions" });
+        const d = routeEdge(s, t, items, { compact: mode === "functions" });
         const active = selectedEdge?.[0] === a && selectedEdge?.[1] === b;
         const change = connectionStatus(model, mode, s, t);
         const delay = ((depths.get(a) || 0) * 0.85 - flowElapsed).toFixed(2);
@@ -600,26 +634,25 @@ function drawGraph() {
             ? `<path d="${d}" class="flow-packet" pathLength="100" style="animation-delay:${delay}s" aria-hidden="true"/>`
             : "";
         const line = `<path d="${d}" class="edge ${bright(s) && bright(t) ? "lit" : ""} ${active ? "selected" : ""} edge-${change}" marker-end="url(#arrow)"/>${motion}`;
-        return architectureView || mode === "overview"
+        return mode === "overview"
           ? line
           : `<g class="edge-control" data-edge="${i}" role="button" tabindex="0" aria-label="Explain ${esc(s.title)} to ${esc(t.title)}" aria-pressed="${active}">${line}<path class="edge-hit" d="${d}" vector-effect="non-scaling-stroke"/><title>${esc(s.title)} → ${esc(t.title)}: click to understand this connection</title></g>`;
       })
       .join("")}</svg>${items
       .map(
         (n) =>
-          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${historyOpen && n.status==="unchanged" ? "history-context" : ""} ${n.impact==="possible" ? "possible-impact" : ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.runtime ? esc(n.type) : n.group ? "BUSINESS AREA" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.impact==="possible" ? "MAY AFFECT" : n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(n.group ? n.summary : n.summary.split(".")[0])}</p>${
+          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${historyCommitSelected && n.status==="unchanged" ? "history-context" : ""} ${n.impact==="possible" ? "possible-impact" : ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.runtime ? esc(n.type) : n.group ? "BUSINESS AREA" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.impact==="possible" ? "MAY AFFECT" : n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(n.group ? n.summary : n.summary.split(".")[0])}</p>${
             n.isFunction
               ? ""
-              : `<div class="node-footer"><span>${icon(n.group ? "box" : "braces")}${n.runtime ? "Inspect boundary" : n.group ? "Explore components" : n.functions.length + " functions"}</span><span class="node-state">${n.status === "modified" ? "Updated" : n.status === "removed" ? "Removed" : n.layer === "external" ? "Connected" : "Mapped"}<b></b></span></div>`
+              : `<div class="node-footer"><span>${icon(n.group ? "box" : "braces")}${n.runtime ? "Inspect boundary" : n.group ? "Focus area" : n.functions.length + " functions"}</span><span class="node-state">${n.status === "modified" ? "Updated" : n.status === "removed" ? "Removed" : n.layer === "external" ? "Connected" : "Mapped"}<b></b></span></div>`
           }<span class="port out"></span></article>`,
       )
       .join("")}`;
-  $("#empty-search").hidden = historyOpen && !items.length ? false : !search || items.some(matches);
-  if(historyOpen && !items.length) $("#empty-search").textContent = "No mapped core logic at this commit";
+  $("#empty-search").hidden = historyCommitSelected && !items.length ? false : !search || items.some(matches);
+  if(historyCommitSelected && !items.length) $("#empty-search").textContent = "No mapped core logic at this commit";
   $("#zoom-label").textContent = Math.round(zoom * 100) + "%";
   applyTransform();
   $("#show-context")?.addEventListener("click", () => {
-    architectureView = false;
     boundaryScope = null;
     selectedWorkflow = null;
     selectedNode = selectedFn = selectedEdge = null;
@@ -670,13 +703,11 @@ function drawGraph() {
     const open = () => {
       const id = el.dataset.node;
       if (historyOpen && historyPlayer?.playing) { historyPlayer.pause(); freezeHistoryMotion(); }
-      if (positions.get(id)?.runtime) {
-        selectedRuntime = positions.get(id);
-        renderRuntimeInspector();
-      } else if (positions.get(id)?.group) {
+      if (positions.get(id)?.group) {
         boundaryScope = positions.get(id);
         selectedWorkflow = null;
-        setDetailLevel("architecture");
+        render();
+        fitGraph();
       } else {
         const item = positions.get(id);
         selectedEdge = null;
@@ -708,7 +739,7 @@ function drawGraph() {
         uiIcons();
       }),
   );
-  if (historyOpen) {
+  if (historyCommitSelected) {
     $("#canvas").style.setProperty("--history-elapsed", `-${Math.max(0,(historyPaused ? historyPausedAt : performance.now())-historyStartedAt)}ms`);
     syncHistoryState();
   }
@@ -720,7 +751,7 @@ function applyTransform() {
 }
 function fitGraph() {
   const canvas = $("#canvas");
-  if (historyOpen && historyBounds.length) {
+  if (historyCommitSelected && historyBounds.length) {
     const framing = frameBounds({left:Math.min(...historyBounds.map(n=>n.x)),top:Math.min(...historyBounds.map(n=>n.y)),right:Math.max(...historyBounds.map(n=>n.x+260)),bottom:Math.max(...historyBounds.map(n=>n.y+200))},{width:canvas.clientWidth,height:canvas.clientHeight});
     zoom = fittedZoom = framing.scale; relativeZoom = 1; pan = {x:framing.x-38,y:framing.y-66}; applyTransform(); $("#zoom-label").textContent=Math.round(zoom*100)+"%"; return;
   }
@@ -748,36 +779,14 @@ function fitGraph() {
 }
 function setDetailLevel(next) {
   if (next !== mode) selectedEdge = null;
-  architectureView = false;
-  selectedRuntime = null;
   selectedNode = selectedFn = selectedEdge = null;
   mode = next;
   relativeZoom = 1;
   render();
   fitGraph();
-  // Ignore the tail of a trackpad gesture after a semantic transition.
-  levelTransitionUntil = performance.now() + 450;
-}
-function updateLevelLock() {
-  const button = $("#level-lock");
-  button.hidden = architectureView;
-  button.setAttribute("aria-pressed", String(levelLocked));
-  button.setAttribute(
-    "aria-label",
-    levelLocked ? "Unlock detail level" : "Lock detail level",
-  );
-  button.title = levelLocked
-    ? "Detail level locked — zoom only changes magnification. Click to unlock."
-    : "Lock detail level to zoom without switching views";
-  button.innerHTML = icon(levelLocked ? "lock-keyhole" : "lock-keyhole-open");
-  uiIcons();
 }
 function changeZoom(multiplier, anchor) {
-  const next = zoomStep(mode, relativeZoom, multiplier, levelLocked || architectureView);
-  if (next.mode !== mode) {
-    setDetailLevel(next.mode);
-    return;
-  }
+  const next = zoomStep(mode, relativeZoom, multiplier);
   const canvas = $("#canvas");
   const point = anchor || {
     x: canvas.clientWidth / 2,
@@ -798,11 +807,6 @@ function list(title, items) {
     : "";
 }
 function renderInspector() {
-  if (architectureView) {
-    if (selectedRuntime) return renderRuntimeInspector();
-    $("#inspector").classList.remove("open");
-    return;
-  }
   if (selectedEdge) {
     const detail = edgeDetails(model, mode, ...selectedEdge);
     if (detail) return renderEdgeInspector(detail);
@@ -819,7 +823,7 @@ function renderInspector() {
     detail = fn || n,
     title = selectedFn !== null ? n.functions[selectedFn] : n.title;
   const ai = aiCache.get(`${n.id}:${selectedFn}`);
-  panel.innerHTML = `<div class="inspector-header"><span class="eyebrow">${selectedFn !== null ? "FUNCTION BEHAVIOR" : "COMPONENT DETAILS"}</span><button class="icon-button" id="close-inspector" aria-label="Close details">${icon("x")}</button></div><div class="inspector-body"><span class="detail-icon ${n.layer}">${icon(selectedFn !== null ? "braces" : n.icon)}</span><h2>${esc(title)}</h2><span class="detail-type">${selectedFn !== null ? "Function" : layerNames[n.layer]}<span>·</span>${esc(n.evidence)}</span>${historyOpen && historySelection ? `<p class="evidence-note">${n.impact==="possible" ? "May affect this workflow: the changed component is a dependency, but changed behavior is not confirmed on its mapped call paths." : "Scoped to this workflow’s mapped structure. Not verified runtime behavior."}</p>` : ""}<p class="detail-summary">${esc(fn ? fn.summary : selectedFn !== null ? `Part of ${n.title.toLowerCase()}. The sample below describes the containing component; import a project for function-specific details.` : n.summary)}</p>${n.change ? `<div class="change-detail">${icon("git-compare-arrows")}<div><strong>What changed</strong><p>${esc(n.change)}</p></div></div>` : ""}<div class="behavior-card">${behaviorCard(detail, model.kind === "demo").map(([label, values]) => list(label, values.map(plainBehavior))).join("")}</div><p class="evidence-note">${model.kind === "demo" ? "Curated example behavior." : "Structure parsed; intent and side effects inferred."} Not runtime verified.</p>${selectedFn === null ? `<section class="detail-section"><h3>FUNCTIONS <span>${n.functions.length}</span></h3><div class="detail-functions">${n.functions.map((f, i) => `<button class="detail-function" data-inspect-function="${i}">${icon("braces")}${esc(f)}${icon("chevron-right")}</button>`).join("")}</div></section>` : `<button class="back-component" id="back-component">${icon("arrow-left")} Back to component</button>`}<section class="detail-section"><h3>${selectedFn !== null ? "COMPONENT DEPENDENCIES" : "CONNECTED TO"}</h3>${
+  panel.innerHTML = `<div class="inspector-header"><span class="eyebrow">${selectedFn !== null ? "FUNCTION BEHAVIOR" : "COMPONENT DETAILS"}</span><button class="icon-button" id="close-inspector" aria-label="Close details">${icon("x")}</button></div><div class="inspector-body"><span class="detail-icon ${n.layer}">${icon(selectedFn !== null ? "braces" : n.icon)}</span><h2>${esc(title)}</h2><span class="detail-type">${selectedFn !== null ? "Function" : layerNames[n.layer]}<span>·</span>${esc(n.evidence)}</span>${historyCommitSelected && historySelection ? `<p class="evidence-note">${n.impact==="possible" ? "May affect this workflow: the changed component is a dependency, but changed behavior is not confirmed on its mapped call paths." : "Scoped to this workflow’s mapped structure. Not verified runtime behavior."}</p>` : ""}<p class="detail-summary">${esc(fn ? fn.summary : selectedFn !== null ? `Part of ${n.title.toLowerCase()}. The sample below describes the containing component; import a project for function-specific details.` : n.summary)}</p>${n.change ? `<div class="change-detail">${icon("git-compare-arrows")}<div><strong>What changed</strong><p>${esc(n.change)}</p></div></div>` : ""}<div class="behavior-card">${behaviorCard(detail, model.kind === "demo").map(([label, values]) => list(label, values.map(plainBehavior))).join("")}</div><p class="evidence-note">${model.kind === "demo" ? "Curated example behavior." : "Structure parsed; intent and side effects inferred."} Not runtime verified.</p>${selectedFn === null ? `<section class="detail-section"><h3>FUNCTIONS <span>${n.functions.length}</span></h3><div class="detail-functions">${n.functions.map((f, i) => `<button class="detail-function" data-inspect-function="${i}">${icon("braces")}${esc(f)}${icon("chevron-right")}</button>`).join("")}</div></section>` : `<button class="back-component" id="back-component">${icon("arrow-left")} Back to component</button>`}<section class="detail-section"><h3>${selectedFn !== null ? "COMPONENT DEPENDENCIES" : "CONNECTED TO"}</h3>${
     model.edges
       .filter((e) => e[0] === n.id)
       .map((e) => model.nodes.find((m) => m.id === e[1]))
@@ -830,7 +834,7 @@ function renderInspector() {
       )
       .join("") || '<p class="muted">No outgoing dependencies mapped.</p>'
   }</section><div class="ai-section"><div>${icon("sparkles")}<strong>Ask about this ${selectedFn !== null ? "function" : "component"}</strong></div><p>Get a focused explanation of its behavior.</p><form id="ask-form"><input id="ask-input" aria-label="Ask about the selected component" placeholder="What happens if this fails?"/><button aria-label="Ask AI" title="Ask AI">${icon("arrow-up")}</button></form><small>${aiConfig.configured ? "DeepSeek configured · selected code sent on request" : "DeepSeek uses server configuration · check AI status in settings"}</small><div id="ai-answer" class="ai-answer" ${ai ? "" : "hidden"}>${ai ? answerMarkup(ai) : ""}</div></div></div>`;
-  const id=fn?.id||n.id,hasGenerated=!historyOpen&&model.kind!=='demo';
+  const id=fn?.id||n.id,hasGenerated=!historyCommitSelected&&model.kind!=='demo';
   const structural={purpose:plainBehavior(detail.summary||n.summary),uncertainty:model.kind==='demo'?'Curated sample behavior; not extracted from a repository.':'Static structure only; dynamic behavior may be missing.'};
   behaviorCard(detail,model.kind==='demo').forEach(([,values],i)=>structural[CARD_FIELDS[i+1]]=values.map(plainBehavior).join(' · '));
   const summary=panel.querySelector('.detail-summary');
@@ -890,26 +894,10 @@ function renderInspector() {
     askAI($("#ask-input").value, n, fn);
   };
   uiIcons();
+  bindBoardWindows();
 }
 function answerMarkup(card) {
   return '<span class="evidence-note">AI interpretation · not runtime verified</span>' + card.map(([label, text]) => list(label, [text])).join("");
-}
-function renderRuntimeInspector() {
-  const panel = $("#inspector"), n = selectedRuntime;
-  panel.classList.add("open");
-  $("#canvas").classList.add("with-inspector");
-  panel.innerHTML = `<div class="inspector-header"><span class="eyebrow">ARCHITECTURE BOUNDARY</span><button class="icon-button" id="close-runtime" aria-label="Close boundary">${icon("x")}</button></div><div class="inspector-body"><h2>${esc(n.title)}</h2><span class="detail-type">${esc(n.type)}</span><p class="detail-summary">${esc(n.summary)}</p><p class="evidence-note">${model.kind === "demo" ? "Curated sample architecture. Only the backend and its mapped dependencies are represented; a frontend is not included in this sample." : "Grouping uses explicit frontend, client, web, ui, backend, server, or api folder names. These are candidates, not verified deployment units. Databases and external services cannot be reliably identified from this source-only import."}</p>${list("Contains", model.nodes.filter(m => n.members.includes(m.id)).map(m => m.title))}<button class="activity-button" id="explore-boundary">Explore these components ${icon("arrow-right")}</button></div>`;
-  $("#close-runtime").onclick = () => {
-    selectedRuntime = null;
-    panel.classList.remove("open");
-    $("#canvas").classList.remove("with-inspector");
-  };
-  $("#explore-boundary").onclick = () => {
-    boundaryScope = n;
-    selectedWorkflow = null;
-    setDetailLevel("architecture");
-  };
-  uiIcons();
 }
 function renderEdgeInspector(detail) {
   const panel = $("#inspector");
@@ -938,6 +926,7 @@ function renderEdgeInspector(detail) {
     };
   });
   uiIcons();
+  bindBoardWindows();
 }
 async function askAI(question, n, fn) {
   if (!question.trim()) return;
@@ -1006,7 +995,9 @@ function modal(content) {
   d.onclick = (e) => {
     if (e.target === d) d.close();
   };
-  d.showModal();
+  if(!d.open)d.show();
+  d.onkeydown=e=>{if(e.key==='Escape')d.close();};
+  bindFloatingPanel(d,'utility',d.querySelector('h2'));
   uiIcons();
 }
 let aiStatusMessage='Checking server configuration…';
@@ -1030,34 +1021,24 @@ async function showSettings() {
 }
 function showConnect() {
   modal(
-    `<span class="modal-symbol">${icon("folder-open")}</span><h2>Map your application</h2><p class="modal-intro">Choose a JavaScript or TypeScript project. Its core components and workflows will become your canvas.</p><button class="folder-choice" id="choose-folder">${icon("folder-open")}<div><strong>Open a local folder</strong><span>${"showDirectoryPicker" in window ? "Live updates as your files change" : "Choose a folder to analyze in your browser"}</span></div>${icon("arrow-right")}</button><div class="privacy-note">${icon("shield-check")}<p>Files are analyzed locally. Tests, configuration, dependencies, and build output are excluded. Workflow paths are inferred from imports, not recorded execution.</p></div><button class="text-button" id="snapshot-folder">Import a folder snapshot</button><br/><br/><button class="text-button" id="load-demo">Explore the sample project instead</button><div id="import-progress" role="status"></div>`,
+    `<span class="modal-symbol">${icon("folder-open")}</span><h2>Map your application</h2><p class="modal-intro">Choose a JavaScript or TypeScript project. Its core components and workflows will become your canvas.</p><button class="folder-choice" id="choose-folder">${icon("folder-open")}<div><strong>Open a local folder</strong><span>${"showDirectoryPicker" in window ? "Read a project snapshot" : "Choose a folder to analyze in your browser"}</span></div>${icon("arrow-right")}</button><div class="privacy-note">${icon("shield-check")}<p>Files are analyzed locally. Tests, configuration, dependencies, and build output are excluded. Workflow paths are inferred from imports, not recorded execution.</p></div><button class="text-button" id="snapshot-folder">Import a folder snapshot</button><br/><br/><button class="text-button" id="load-demo">Explore the sample project instead</button><div id="import-progress" role="status"></div>`,
   );
   $("#choose-folder").onclick = pickFolder;
   $("#snapshot-folder").onclick = () => $("#folder-input").click();
   $("#load-demo").onclick = () => {
     explanationQueue.stop();explanationConsent=false;
-    stopWatching();
+
     layoutPositions.clear();
     model = createDemo();
     historyData = createDemoHistory();
     selectedWorkflow = "checkout";
     selectedNode = null;
-    architectureView = false;
     boundaryScope = null;
-    selectedRuntime = null;
     mode = "architecture";
-    simulation = false;
     $("#modal").close();
     render();
     fitGraph();
   };
-}
-function stopWatching() {
-  pendingProject=null;
-  clearInterval(liveTimer);
-  clearTimeout(simulationTimer);
-  liveTimer = null;
-  folderHandle = null;
 }
 async function readFolder(handle, prefix = "") {
   const files = [];
@@ -1080,109 +1061,31 @@ async function readFolder(handle, prefix = "") {
   }
   return files;
 }
-async function installProject(files, name, watch = false) {
-  files=orderedFiles(files);
-  if(!watch){pendingProject=null;baseline=sourceSignature(files);}
-  const version=watch?projectLoadVersion:++projectLoadVersion;
-  if(!watch){projectGate=true;projectGatePhase='mapping';explanationPreparing=true;explanationQueue.stop();explanationQueue.states.clear();explanationConsent=false;showProjectGate();}
-  if($('#import-progress'))$('#import-progress').textContent='Mapping your project…';
+async function installProject(files,name) {
+  const version=++projectLoadVersion;
+  files=orderedFiles(files);projectGate=true;projectGatePhase='mapping';explanationPreparing=true;
+  explanationQueue.stop();explanationQueue.states.clear();explanationConsent=false;showProjectGate();
   await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
-  const { analyzeFiles, diffModels } = await import("./analyzer.js");
+  const {analyzeFiles}=await import('./analyzer.js');
   if(version!==projectLoadVersion)return false;
-  const next = analyzeFiles(files, name);
-  if (!next.nodes.length) {
-    if(projectGate)cancelProjectGate();
-    toast(
-      "No supported functions found. Choose a JavaScript or TypeScript application.",
-    );
-    return false;
-  }
-  if (!watch) { layoutPositions.clear(); historyData = null; }
-  const explanationChanged=!watch||JSON.stringify(model.nodes.map(n=>[n.id,n.fingerprint]))!==JSON.stringify(next.nodes.map(n=>[n.id,n.fingerprint]));
-  model = watch ? diffModels(model, next) : next;
-  if (!watch) selectedEdge = null;
-  aiCache.clear();
-  if (!watch) {
-    selectedWorkflow = null;
-    selectedNode = null;
-    selectedFn = null;
-    architectureView = false;
-    boundaryScope = null;
-    selectedRuntime = null;
-    mode = "architecture";
-  } else if (!model.nodes.some((n) => n.id === selectedNode)) {
-    selectedNode = null;
-    selectedFn = null;
-  }
-  render();
-  if (!watch) fitGraph();
-  if(explanationChanged)await prepareExplanations(false);
+  const next=analyzeFiles(files,name);
+  if(!next.nodes.length){cancelProjectGate();toast('No supported functions found.');return false;}
+  layoutPositions.clear();historyData=null;model=next;aiCache.clear();
+  selectedWorkflow=selectedNode=selectedFn=selectedEdge=boundaryScope=null;mode='architecture';
+  render();fitGraph();await prepareExplanations(false);
   if(version!==projectLoadVersion)return false;
-  if(!watch){projectGatePhase=[...explanationQueue.states.values()].every(s=>s.status==='ready')?'generating':'consent';updateProjectGate();}
-  return true;
-}
-async function scanFolder(watch = false) {
-  if (!folderHandle || scanBusy || historyOpen || watch&&projectGate) return;
-  scanBusy = true;
-  try {
-    const version=projectLoadVersion,handle=folderHandle;
-    const files = await readFolder(folderHandle);
-    if(historyOpen||version!==projectLoadVersion||handle!==folderHandle) return;
-    const signature = sourceSignature(files);
-    if(watch){
-      const next=signature===baseline?null:{files:orderedFiles(files),name:folderHandle.name,signature};
-      if(next?.signature!==pendingProject?.signature){pendingProject=next;updateExplanations();}
-      return;
-    }
-    baseline = signature;
-    await installProject(files, folderHandle.name, watch);
-  } catch (e) {
-    clearInterval(liveTimer);
-    liveTimer = null;
-    toast("Folder access was lost. Reopen the project to reconnect.");
-  } finally {
-    scanBusy = false;
-  }
+  projectGatePhase=allExplanationsReady(explanationQueue)?'generating':'consent';updateProjectGate();return true;
 }
 async function pickFolder() {
-  if (!("showDirectoryPicker" in window)) {
-    $("#folder-input").click();
-    return;
-  }
-  try {
-    const handle = await window.showDirectoryPicker({ mode: "read" });
-    stopWatching();
-    folderHandle = handle;
-    $("#import-progress").textContent = "Analyzing your application…";
-    await scanFolder();
-    if (folderHandle) {
-      liveTimer = setInterval(() => scanFolder(true), 3000);
-      render();
-      fitGraph();
-      toast("Project connected. Watching for changes.");
-    }
-  } catch (e) {
-    if (e.name !== "AbortError") {
-      toast(
-        "Folder access is unavailable here. Choose files using the folder picker.",
-      );
-      $("#folder-input").click();
-    }
-  }
+  if(!('showDirectoryPicker' in window)){$('#folder-input').click();return;}
+  try {const handle=await window.showDirectoryPicker({mode:'read'});const files=await readFolder(handle);await installProject(files,handle.name);}
+  catch(error){if(error.name!=='AbortError')toast('Could not open folder. Use a folder snapshot.');}
 }
 function bind() {
   $("#connect").onclick = () => { if(historyOpen) exitHistory(); showConnect(); };
   $("#settings").onclick = showSettings;
-  if ($("#architecture-map")) $("#architecture-map").onclick = () => {
-    architectureView = true;
-    selectedRuntime = null;
-    selectedNode = selectedFn = selectedEdge = null;
-    search = "";
-    render();
-    fitGraph();
-  };
+
   if ($("#all-map")) $("#all-map").onclick = () => {
-    architectureView = false;
     boundaryScope = null;
     selectedWorkflow = null;
     selectedNode = selectedFn = selectedEdge = null;
@@ -1192,7 +1095,6 @@ function bind() {
   document.querySelectorAll("[data-workflow]").forEach(
     (el) =>
       (el.onclick = () => {
-        architectureView = false;
         boundaryScope = null;
         selectedWorkflow = el.dataset.workflow;
         selectedNode = selectedFn = selectedEdge = null;
@@ -1202,12 +1104,13 @@ function bind() {
         fitGraph();
       }),
   );
+  $("#changes-toggle").hidden=!historyCommitSelected;
   $("#changes-toggle").onclick = () => {
     changesOnly = !changesOnly;
     drawGraph();
     $("#changes-toggle").classList.toggle("enabled", changesOnly);
     if (changesOnly && !model.nodes.some((n) => n.status !== "unchanged"))
-      toast("No changes yet. Play the demo or connect a live project.");
+      toast("Select a commit to view its changes.");
   };
   $("#sidebar-changes")?.addEventListener("click", () => {
     changesOnly = true;
@@ -1225,58 +1128,12 @@ function bind() {
   );
   $("#zoom-in").onclick = () => changeZoom(1.16);
   $("#zoom-out").onclick = () => changeZoom(1 / 1.16);
-  $("#level-lock").onclick = () => {
-    levelLocked = !levelLocked;
-    // Unlock from the current framing without jumping to another detail level.
-    if (!levelLocked) {
-      fittedZoom = zoom;
-      relativeZoom = 1;
-    }
-    updateLevelLock();
-  };
-  updateLevelLock();
   $("#fit").onclick = fitGraph;
   $("#help").onclick = () =>
     modal(
-      `<span class="modal-symbol">${icon("map")}</span><h2>A map you can explore</h2><div class="help-rows"><p><strong>Follow a workflow</strong><span>Choose one on the left. Its components and connections light up.</span></p><p><strong>Change your perspective</strong><span>Zoom through Overview, Components, and Functions. Open Architecture separately to inspect application boundaries. Scroll to zoom, or drag the canvas to pan.</span></p><p><strong>Understand behavior</strong><span>Select a component or function for inputs, outcomes, decisions, and side effects.</span></p><p><strong>Follow changes</strong><span>Connect a local folder for live updates, or play the clearly labeled sample change.</span></p></div>`,
+      `<span class="modal-symbol">${icon("map")}</span><h2>A map you can explore</h2><div class="help-rows"><p><strong>Follow a workflow</strong><span>Choose one on the left. Its components and connections light up.</span></p><p><strong>Change your perspective</strong><span>Choose Overview, Components, or Functions in the toolbar. Scroll to zoom; drag to pan.</span></p><p><strong>Understand behavior</strong><span>Select a component or function for inputs, outcomes, decisions, and side effects.</span></p><p><strong>Follow changes</strong><span>Select a commit, then play its history.</span></p></div>`,
     );
-  const playDemo = (size) => {
-    clearTimeout(simulationTimer);
-    simulation = true;
-    boundaryScope = selectedRuntime = null;
-    selectedNode = selectedFn = selectedEdge = null;
-    changesOnly = false;
-    model =
-      size === "large"
-        ? applyLargeDemoChange(createDemo())
-        : applyDemoChange(createDemo());
-    render();
-    fitGraph();
-    toast(
-      size === "large"
-        ? "Large demo: 5 added · 6 updated · 2 removed components."
-        : "Small demo: 1 added · 1 updated component.",
-    );
-  };
-  $("#simulate-large")?.addEventListener("click", () => playDemo("large"));
-  $("#reset-demo")?.addEventListener("click", () => {
-    clearTimeout(simulationTimer);
-    model = createDemo();
-    simulation = false;
-    boundaryScope = selectedRuntime = null;
-    selectedNode = selectedFn = selectedEdge = null;
-    changesOnly = false;
-    render();
-    fitGraph();
-  });
-  if ($("#simulate")) $("#simulate").onclick = () => {
-    if (model.kind !== "demo") {
-      if (folderHandle) scanFolder(true);
-      else showConnect();
-      return;
-    }
-    playDemo("small");
-  };
+
   $("#folder-input").onchange = async (e) => {
     const files = [...e.target.files];
     if (!files.length) return;
@@ -1294,7 +1151,7 @@ function bind() {
           text: await f.text(),
         })),
       );
-      stopWatching();
+
       await installProject(data, files[0].webkitRelativePath.split("/")[0]);
     } catch (err) {
       toast("Could not analyze the folder: " + err.message);
@@ -1328,7 +1185,6 @@ function bind() {
     (e) => {
       if (e.target.closest(".function-list")) return;
       e.preventDefault();
-      if (performance.now() < levelTransitionUntil) return;
       const rect = canvas.getBoundingClientRect();
       const delta =
         e.deltaY *
@@ -1348,7 +1204,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     selectedEdge = null;
-    selectedNode = selectedFn = selectedRuntime = null;
+    selectedNode = selectedFn =
     drawGraph();
     $("#inspector").classList.remove("open");
     $("#canvas").classList.remove("with-inspector");
@@ -1379,12 +1235,11 @@ if (context?.registerTool) {
           additionalProperties: false,
         },
         execute: async ({ workflowId }) => {
-          if (!historyOpen && !model.workflows.some((w) => w.id === workflowId))
+          if (!historyCommitSelected && !model.workflows.some((w) => w.id === workflowId))
             throw new Error("Unknown workflow");
-          architectureView = false;
           boundaryScope = null;
           selectedNode = selectedFn = selectedEdge = null;
-          if(historyOpen) {
+          if(historyCommitSelected) {
             const entry=historyWorkflows.find(w=>w.versions.some(v=>v?.id===workflowId));
             if(!entry)throw new Error("Workflow not found in history");
             chooseHistoryWorkflow(entry.id);

@@ -22,22 +22,25 @@ npm run build # Build static files into dist/
 
 ## Explore the app
 
-- Zoom through **Overview**, **Components**, and **Functions**. Each extracted named function has its own selectable node.
+- Choose **Overview**, **Components**, or **Functions** in the top-right toolbar. Zoom only changes magnification within the chosen level. Each extracted named function has its own selectable node.
 - Overview boxes group business areas (inferred from paths for imported projects). Components follow left-to-right dependency stages; functions remain individually selectable within component boundaries. Highlighting and inspection preserve positions; changing workflow focus or graph structure can reflow the layout.
-- Open **Architecture** separately for application, data-store, and external-system boundaries. Zoom only magnifies this view. Select a boundary to inspect its members or explore its components. This is C4-inspired, not a strict C4 implementation. The sample maps its backend, database, and providers; it does not include a frontend. Local imports use explicit frontend/backend folder-name hints; unclear ownership stays unassigned, and external dependencies are not invented.
 - Select a workflow to focus its graph and collapse unrelated areas into a context box. Choose **All workflows** to restore the overview. Drag to pan and scroll to zoom.
 - Hover or select a connection to trace its complete path and both endpoints while other paths fade.
 - Selecting a workflow plays a one-pass, entry-to-end flow animation (illustrative, not a runtime trace). Reduced-motion preferences are respected.
-- Try **Small change demo** (2 components) or **Large change demo** (13 components). Added nodes/connections are green, updated or affected ones amber, and removed ones pink and dashed. Reset restores the original sample.
-- Use the **lock button** beside the zoom controls to keep the detail level fixed while zooming. The level tabs still work manually.
 - Select a node for a compact behavior card: **Receives**, **Checks & branches**, **Changes**, **Returns**, and **If it fails**. Missing evidence stays explicitly unknown.
-- Click a connection in Components or Functions to inspect its purpose, expected information/results, side effects, and failure uncertainty. Destination inputs are not verified call arguments. Imported purposes are inferred; import-only dependencies are labeled as unknown. Overview and Architecture connections are not selectable.
-- Choose **Open project** to analyze a local JavaScript/TypeScript folder. Supported Chromium browsers can watch it for changes; other browsers import a snapshot.
+- Click a connection in Components or Functions to inspect its purpose, expected information/results, side effects, and failure uncertainty. Destination inputs are not verified call arguments. Imported purposes are inferred; import-only dependencies are labeled as unknown. Overview connections are not selectable.
+- Choose **Open project** to analyze a local JavaScript/TypeScript folder. Import reads a snapshot. The app does not watch uncommitted file changes.
 - AI explanations use DeepSeek through a local server endpoint. Settings show configuration status, never a key-entry prompt.
+
+## Canvas workspace
+
+The canvas fills the window. Workflows, commit history, and details float over it. Drag their headers to move them; resize workflow, history, and detail windows from the lower-right corner. Window sizes and positions are retained while you explore. Use the individual panel icons to hide or restore windows. The detail window keeps AI and structural analysis in matching tabs. Selected connections use a strong blue highlight. The current commit title belongs to the history window, away from graph nodes. Workflow lists use names rather than project-specific icons.
+
+The compact Code / Plan control reserves space for future planning workflows. Plan is disabled and has no implementation yet. Architecture and live-change demos have been removed; system evolution is explored through Commit history. Imported history refreshes when you export and import a newer history file.
 
 ## Replay commit history
 
-Open **Commit history** in the sidebar. Select any commit, then **Play from this commit** to advance to the latest imported commit. Pause at any time, step backward/forward, or choose 4, 8, or 12 seconds per commit. Selecting a node or connection pauses playback for inspection.
+Open **Commit history** with the clock icon. No commit is selected initially, so the current canvas stays unchanged. Select a commit to show its workflow snapshot, then press **Play** to advance to the latest imported commit. Play without a selection starts at the first commit. Separate **Pause** and **Stop** icon buttons let you suspend playback or end it completely. Stop restores your previous workflow, detail level, and canvas position. Deselecting Commit history or closing its panel also stops it. Step backward/forward, or choose 4, 8, or 12 seconds per commit. Selecting a node or connection pauses playback for inspection.
 
 The sample includes six **illustrative snapshots**, not real Git commits. Added boxes appear, modified boxes glow, and removed boxes fade but remain inspectable until the next commit. Connections animate too. Positions are reserved across the timeline, and reduced-motion preferences disable animations. Each commit is compared with its preceding commit, not with the last item you clicked.
 
@@ -61,17 +64,17 @@ Set `DEEPSEEK_API_KEY` in the environment of the process running `npm run dev`, 
 
 Open a local JavaScript/TypeScript project, choose **Generate explanations**, and approve sending this project's core implementation and dependency context to DeepSeek. The local proxy works with `npm run dev` and `npx vite preview --host 127.0.0.1` after building. Static hosting alone cannot access your machine's environment; a future hosted deployment needs its own authenticated server integration and server secret. The proxy intentionally rejects non-local hosts and cross-origin requests.
 
-Opening a project displays a blocking preparation screen. After code-sharing approval, a progress bar tracks all overview, workflow, area, component and function explanations. The canvas opens only when every card is ready; failed, missing or outdated cards do not count as complete. Pause/resume, retry and cancel are available. Fully cached projects open without new requests. Completion means structured explanations are filled, not that AI claims are factually verified. Later file changes display **Update explanations**; the previous fully explained version remains usable until you choose to update through the blocking preparation screen. Watching does not start AI requests, and file enumeration order does not invalidate explanations.
+Opening a project displays a blocking preparation screen. After code-sharing approval, a progress bar tracks all overview, workflow, area, component and function explanations. The canvas opens only when every card is ready; failed, missing or outdated cards do not count as complete. Pause/resume, retry and cancel are available. Fully cached projects open without new requests. Completion means structured explanations are filled, not that AI claims are factually verified. Reopen a project to import a new snapshot. File enumeration order does not invalidate explanations.
 
 A comment-free TypeScript sample is available in `examples/ticket-reservations`. Open that folder to test generation. Its README lists expected behavior separately from the source, so those answers are not included in the analysis context.
 
-Generated text and revision hashes are cached on this device (up to 500 cards); raw code and API keys are not cached. Reopening unchanged code reuses cards. Changes to supplied dependency context invalidate the cache when you explicitly update. Use settings to clear the cache. Opening an updated project requires approval before any uncached explanations are generated. File watching never silently regenerates explanations.
+Generated text and revision hashes are cached on this device (up to 500 cards); raw code and API keys are not cached. Reopening unchanged code reuses cards. Changes to supplied dependency context invalidate the cache when you reopen a project. Use settings to clear the cache. Opening an updated project requires approval before any uncached explanations are generated. There is no live file watcher.
 
 Explanations are AI inferences, not verified execution. Context is bounded, so large components and complex dependencies may be incomplete. Server connectivity and provider errors surface recoverable messages. Commit-history snapshots and the curated demo do not trigger background AI analysis. Real API access requires a configured server key and provider balance; automated tests use mock responses.
 
 ## Scope and privacy
 
-The included Commerce app and change demo are curated samples. Imported workflows and labels are inferred from static analysis, not verified runtime traces. Function edges show resolvable calls; dynamic dispatch, framework injection, path aliases, and anonymous callbacks are not fully supported. Tests, configuration, dependencies, and build outputs are excluded.
+The included Commerce app and commit snapshots are curated samples. Imported workflows and labels are inferred from static analysis, not verified runtime traces. Function edges show resolvable calls; dynamic dispatch, framework injection, path aliases, and anonymous callbacks are not fully supported. Tests, configuration, dependencies, and build outputs are excluded.
 
 Imported source stays in browser memory until you approve background analysis or submit a question, when selected context passes through the local server to DeepSeek. The API key stays in the server environment. Refreshing clears the imported project, but locally cached explanation text remains until cleared. AI explanations may be inaccurate.
 
