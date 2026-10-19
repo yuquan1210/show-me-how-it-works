@@ -14,17 +14,18 @@ export function deepseekMiddleware({env=process.env,fetcher=fetch}={}) {
     if(!configured)return send(503,{error:'DEEPSEEK_API_KEY is not configured. Set it in the server environment and restart the app.'});
     if(!req.headers['content-type']?.startsWith('application/json'))return send(415,{error:'JSON required.'});
     const controller=new AbortController();
-    const timeout=setTimeout(()=>controller.abort(),90000);
+    const timeout=setTimeout(()=>controller.abort(),300000);
     res.on('close',()=>controller.abort());
     try {
       let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>256000)return send(413,{error:'Explanation context is too large.'});}
       let data;try{data=JSON.parse(body);}catch{return send(400,{error:'Invalid JSON.'});}
+      if(data.review!==undefined&&typeof data.review!=='boolean')return send(400,{error:'Invalid review mode.'});
       if(!Array.isArray(data.messages)||data.messages.length>8||!data.messages.every(m=>['system','user','assistant'].includes(m.role)&&typeof m.content==='string'))return send(400,{error:'Invalid messages.'});
       for(let attempt=0;attempt<2;attempt++) {
       const upstream=await fetcher('https://api.deepseek.com/chat/completions',{
         method:'POST',signal:controller.signal,
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${env.DEEPSEEK_API_KEY.trim()}`},
-        body:JSON.stringify({model,messages:data.messages,max_tokens:attempt?4096:2048,thinking:{type:'disabled'},response_format:{type:'json_object'},stream:false})
+        body:JSON.stringify({model,messages:data.messages,max_tokens:data.review?(attempt?32768:16384):(attempt?4096:2048),thinking:{type:data.review?'enabled':'disabled'},...(data.review?{reasoning_effort:'high'}:{}),response_format:{type:'json_object'},stream:false})
       });
       if(!upstream.ok)return send(upstream.status,{error:upstream.status===401?'DeepSeek rejected the configured server key.':upstream.status===402?'DeepSeek reports insufficient account balance.':upstream.status===400?'DeepSeek rejected the request. Check DEEPSEEK_MODEL in the server environment.':upstream.status===429?'DeepSeek rate limit reached. Retry shortly.':`DeepSeek request failed (${upstream.status}).`});
       const result=await upstream.json();

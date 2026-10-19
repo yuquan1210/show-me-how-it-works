@@ -131,7 +131,8 @@ export function analyzeFiles(files, name = "My application") {
   const nodes = [],
     imports = new Map(),
     functions = [],
-    errors = [];
+    errors = [],
+    explanationEvidence = [];
   for (const { path, text } of files.filter((f) => isSource(f.path))) {
     const sf = program.getSourceFile(path);
     if (sf.parseDiagnostics.length) errors.push(path);
@@ -142,6 +143,17 @@ export function analyzeFiles(files, name = "My application") {
     for (const st of sf.statements)
       if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier))
         moduleImports.push(st.moduleSpecifier.text);
+    // Local AI evidence includes state, constants and types, not just function bodies.
+    const moduleDeclarations = sf.statements.flatMap(st => {
+      if (ts.isVariableStatement(st)) return st.declarationList.declarations
+        .filter(d => !d.initializer || !ts.isArrowFunction(d.initializer) && !ts.isFunctionExpression(d.initializer))
+        .map(d => `${st.declarationList.flags & ts.NodeFlags.Const ? 'const' : 'let'} ${d.getText(sf)};`);
+      if (ts.isClassDeclaration(st)) return st.members.filter(ts.isPropertyDeclaration).map(p => p.getText(sf));
+      return ts.isInterfaceDeclaration(st) || ts.isTypeAliasDeclaration(st) || ts.isEnumDeclaration(st)
+        ? [st.getText(sf)] : [];
+    });
+    const evidence={id, declarations:moduleDeclarations.join('\n'), imports:moduleImports,functions:[]};
+    explanationEvidence.push(evidence);
     const visit = (n) => {
       if (
         (ts.isFunctionDeclaration(n) ||
@@ -164,6 +176,7 @@ export function analyzeFiles(files, name = "My application") {
             outputs = [],
             decisions = [],
             effects = [];
+          const facts={parameters:n.parameters.map(p=>p.getText(sf)),returns:[],throws:[],branches:[],locals:[],numbers:[],arithmeticValues:[]};
           const scan = (c) => {
             if (
               c !== n &&
@@ -186,6 +199,14 @@ export function analyzeFiles(files, name = "My application") {
             }
             if (ts.isReturnStatement(c))
               outputs.push(summarizeReturn(c.expression));
+            if(ts.isReturnStatement(c))facts.returns.push(c.expression?.getText(sf)||'No value');
+            if(ts.isThrowStatement(c))facts.throws.push(c.expression.getText(sf));
+            if(ts.isIfStatement(c))facts.branches.push({condition:c.expression.getText(sf),outcome:branchOutcome(c.thenStatement)});
+            if(ts.isVariableDeclaration(c)&&c.initializer)facts.locals.push({name:c.name.getText(sf),value:c.initializer.getText(sf)});
+            if(ts.isNumericLiteral(c))facts.numbers.push(c.text);
+            if(ts.isNumericLiteral(c)&&ts.isBinaryExpression(c.parent)&&[
+              ts.SyntaxKind.AsteriskToken,ts.SyntaxKind.SlashToken,ts.SyntaxKind.PlusToken,ts.SyntaxKind.MinusToken,
+            ].includes(c.parent.operatorToken.kind)&&Number(c.text)>=10)facts.arithmeticValues.push(String(Number(c.text)));
             if (ts.isIfStatement(c)) {
               decisions.push(
                 `When ${describeCondition(c.expression)} → ${branchOutcome(c.thenStatement)}`,
@@ -226,6 +247,7 @@ export function analyzeFiles(files, name = "My application") {
             parent: id,
           };
           fns.push(fn);
+          evidence.functions.push({id:fnId,...facts});
           functions.push(fn);
         }
       }
@@ -314,6 +336,10 @@ export function analyzeFiles(files, name = "My application") {
     const to = declarations.get(target);
     if (to && !functionEdges.some(([a, b]) => a === from && b === to))
       functionEdges.push([from, to]);
+    if(to && ts.isVariableDeclaration(call.parent)) {
+      const file=explanationEvidence.find(e=>e.id===call.getSourceFile().fileName);
+      if(file)(file.callResults ||= []).push({from,to,resultName:call.parent.name.getText(call.getSourceFile())});
+    }
   }
   const roots = entries.length
     ? entries
@@ -349,6 +375,7 @@ export function analyzeFiles(files, name = "My application") {
     updated: Date.now(),
     errors,
     fileCount: files.filter((f) => isSource(f.path)).length,
+    explanationEvidence,
   };
 }
 export function diffModels(before, after) {

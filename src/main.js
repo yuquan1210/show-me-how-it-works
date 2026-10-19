@@ -126,7 +126,7 @@ import { functionItems } from "./function-graph.js";
 import { behaviorCard, plainBehavior, parseBehaviorAnswer } from "./behavior.js";
 import { createDemoHistory, validateHistory, CommitPlayer } from "./history.js";
 import { workflowCatalog, workflowCommit, workflowHistoryUnion, nextWorkflowCommit } from "./workflow-history.js";
-import { ExplanationQueue, ExplanationCache, explanationJobs, explanationProgress, allExplanationsReady, CARD_FIELDS, CARD_LABELS } from './explanations.js';
+import { ExplanationQueue, ExplanationCache, explanationJobs, jobContext, explanationProgress, allExplanationsReady, CARD_FIELDS, CARD_LABELS } from './explanations.js';
 import {orderedFiles} from './project-revision.js';
 import {bindFloatingPanel} from './floating-panels.js';
 import "./style.css";
@@ -181,6 +181,11 @@ let detailExplanationTab='ai';
 function explanationFields(card) {
   return CARD_FIELDS.map((key,i)=>`<div class="explanation-field"><strong>${CARD_LABELS[i]}</strong><span>${esc(card[key]||'Not established')}</span></div>`).join('');
 }
+function graphSummary(node) {
+  const id=node.group ? `area:${node.id}` : node.id;
+  const state=model.kind!=='demo' && !historyCommitSelected && explanationQueue.states.get(id);
+  return state?.status==='ready' ? state.card.purpose : node.group ? node.summary : node.summary.split('.')[0];
+}
 function showProjectGate() {
   let dialog=document.querySelector('#project-loading');
   if(!dialog){dialog=document.createElement('dialog');dialog.id='project-loading';dialog.className='project-loading';dialog.setAttribute('aria-label','Preparing project');dialog.addEventListener('cancel',e=>e.preventDefault());document.body.append(dialog);}
@@ -197,7 +202,7 @@ function updateProjectGate() {
   if(!projectGate)return;
   const dialog=document.querySelector('#project-loading');if(!dialog)return;
   const states=[...explanationQueue.states.values()],ready=states.filter(s=>s.status==='ready'&&!s.stale).length;
-  if(projectGatePhase==='generating'&&!explanationPreparing&&allExplanationsReady(explanationQueue)){projectGate=false;dialog.remove();fitGraph();toast('Project ready. All explanations are filled.');return;}
+  if(projectGatePhase==='generating'&&!explanationPreparing&&allExplanationsReady(explanationQueue)){projectGate=false;dialog.remove();drawGraph();fitGraph();toast('Project ready. All explanations are filled.');return;}
   const loading=projectGatePhase==='mapping'||explanationPreparing;
   const failed=states.filter(s=>s.status==='error');
   dialog.innerHTML=`<h2>${loading?'Mapping your project':projectGatePhase==='consent'?'Prepare all explanations':'Preparing your project'}</h2><p>The canvas opens when every explanation is ready.</p><progress aria-label="Project preparation" ${loading?'':`max="${Math.max(states.length,1)}" value="${ready}"`}></progress><p role="status">${loading?'Reading core logic and building the explanation queue…':`${ready} of ${states.length} explanations ready`}</p>${projectGatePhase==='generating'?'<p data-explanation-live></p>':''}${!loading&&!aiConfig.configured?`<p role="alert">${esc(aiStatusMessage)}</p><button id="gate-check" class="primary-button">Check configuration again</button>`:''}${!loading&&projectGatePhase==='consent'&&aiConfig.configured?`<p>Analysis sends core source and dependency context to DeepSeek. Your key stays on the server. Provider charges may apply; generated text is cached on this device.</p><button id="gate-start" class="primary-button">Approve and generate all explanations</button>`:''}${failed.length?`<p role="alert">${failed.length} explanations failed. ${esc(failed[0].error||'Please retry.')}</p>`:''}${!loading&&projectGatePhase==='generating'?`<button id="gate-retry" class="primary-button">${explanationQueue.enabled?'Pause generation':failed.length?'Retry failed explanations':'Resume generation'}</button>`:''}<button id="gate-cancel" class="text-button">Cancel and return to sample</button>`;
@@ -337,7 +342,7 @@ function freezeHistoryMotion() {
 }
 function syncHistoryState() {
   const canvas = $("#canvas");
-  if (!canvas || !historyOpen || !$("#history-note")) return;
+  if (!canvas || !historyOpen || !historyPlayer || !$("#history-note")) return;
   canvas.classList.add("history-canvas");
   canvas.classList.toggle("history-paused",historyPaused);
   const button = $("#history-play");
@@ -482,7 +487,8 @@ function render() {
     `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
   if(!historyCommitSelected && model.kind!=='demo'){
     $('.canvas-toolbar').insertAdjacentHTML('afterend','<div class="explanation-progress" id="explanation-progress"></div>');
-    $('.map-tools').insertAdjacentHTML('afterbegin','<button class="icon-button" id="open-project-summary" aria-label="Read overview explanation" title="Read overview explanation">'+icon('book-open')+'</button>');
+    const summaryLabel=`Read ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'} explanation`;
+    $('.map-tools').insertAdjacentHTML('afterbegin',`<button class="icon-button" id="open-project-summary" aria-label="${summaryLabel}" title="${summaryLabel}">${icon('book-open')}</button>`);
     $('#open-project-summary').onclick=()=>$('#explanation-summary').click();
     const workflow=model.workflows.find(w=>w.id===selectedWorkflow);
     explanationQueue.prioritize([explanationScope(),...(workflow?.nodes||[])]);
@@ -641,7 +647,7 @@ function drawGraph() {
       .join("")}</svg>${items
       .map(
         (n) =>
-          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${historyCommitSelected && n.status==="unchanged" ? "history-context" : ""} ${n.impact==="possible" ? "possible-impact" : ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.runtime ? esc(n.type) : n.group ? "BUSINESS AREA" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.impact==="possible" ? "MAY AFFECT" : n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(n.group ? n.summary : n.summary.split(".")[0])}</p>${
+          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${historyCommitSelected && n.status==="unchanged" ? "history-context" : ""} ${n.impact==="possible" ? "possible-impact" : ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.runtime ? esc(n.type) : n.group ? "BUSINESS AREA" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.impact==="possible" ? "MAY AFFECT" : n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(graphSummary(n))}</p>${
             n.isFunction
               ? ""
               : `<div class="node-footer"><span>${icon(n.group ? "box" : "braces")}${n.runtime ? "Inspect boundary" : n.group ? "Focus area" : n.functions.length + " functions"}</span><span class="node-state">${n.status === "modified" ? "Updated" : n.status === "removed" ? "Removed" : n.layer === "external" ? "Connected" : "Mapped"}<b></b></span></div>`
@@ -843,7 +849,10 @@ function renderInspector() {
   const oldBehavior=panel.querySelector('.behavior-card');
   if(oldBehavior.nextElementSibling?.classList.contains('evidence-note'))oldBehavior.nextElementSibling.remove();
   oldBehavior.remove();
-  panel.querySelector('#detail-ai-panel').append(panel.querySelector('.ai-section'));
+  const followup=document.createElement('details');followup.className='ai-followup';
+  followup.innerHTML='<summary>Ask AI</summary>';
+  followup.append(panel.querySelector('.ai-section'));
+  panel.querySelector('#detail-ai-panel').append(followup);
   let activeTab=hasGenerated?detailExplanationTab:'structure';
   const selectTab=(tab,focus=false)=>{
     activeTab=tab;detailExplanationTab=tab;
@@ -938,16 +947,9 @@ async function askAI(question, n, fn) {
   const button = $("#ask-form button");
   button.disabled = true;
   try {
-    const raw = fn?.raw || n.functionDetails?.map((f) => f.raw).join("\n");
-    const context = raw
-      ? {
-          name: n.title,
-          selectedFunction: fn?.title,
-          source: raw.slice(0, 32000),
-        }
-      : fn
-        ? { ...fn, component: n.title }
-        : { ...n };
+    const context = jobContext(model,{id:fn?.id||n.id,title:fn?.title||n.title,
+      kind:fn?'function':'component',members:[n.id],fn}).context;
+    if(!context.source.length){const detail=fn||n;context.staticBehavior={evidence:model.kind==='demo'?'Curated sample, not extracted source':'Historical structural labels only',summary:detail.summary,inputs:detail.inputs,outputs:detail.outputs,decisions:detail.decisions,effects:detail.effects};}
     const r = await fetch(
       '/api/ai/chat',
       {

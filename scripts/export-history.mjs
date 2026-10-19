@@ -29,6 +29,7 @@ try {
       files.push({path,text:git('cat-file','blob',blob)});
     }
     const model = analyzeFiles(files,name);
+    delete model.explanationEvidence;
     model.updated = Date.parse(date);
     for(const n of model.nodes) {
       n.fingerprint = digest(n.fingerprint);

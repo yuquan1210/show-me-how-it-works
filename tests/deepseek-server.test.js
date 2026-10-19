@@ -44,3 +44,22 @@ test('repeated malformed output stops after two attempts with a safe error',asyn
   const response=await fetch(url+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[]})});
   assert.equal(response.status,502);assert.equal(calls,2);assert.match((await response.json()).error,/twice/);
 });
+test('accuracy review enables reasoning with sufficient budget but returns only final text',async t=>{
+  const url=await server(t,{env:{DEEPSEEK_API_KEY:'fake-test-key'},fetcher:async(_,options)=>{
+    const body=JSON.parse(options.body);
+    assert.equal(body.thinking.type,'enabled');assert.equal(body.reasoning_effort,'high');assert.equal(body.max_tokens,16384);
+    return {ok:true,json:async()=>({choices:[{finish_reason:'stop',message:{content:'{"purpose":"Reviewed"}',reasoning_content:'private intermediate reasoning'}}]})};
+  }});
+  const result=await (await fetch(url+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({review:true,messages:[{role:'user',content:'Review'}]})})).json();
+  assert.deepEqual(result,{choices:[{finish_reason:'stop',message:{content:'{"purpose":"Reviewed"}'}}]});
+});
+test('truncated high-effort review retries once with a larger reasoning budget',async t=>{
+  const budgets=[];
+  const url=await server(t,{env:{DEEPSEEK_API_KEY:'fake-test-key'},fetcher:async(_,options)=>{
+    const body=JSON.parse(options.body);budgets.push(body.max_tokens);
+    assert.equal(body.thinking.type,'enabled');assert.equal(body.reasoning_effort,'high');
+    return {ok:true,json:async()=>({choices:[{finish_reason:budgets.length===1?'length':'stop',message:{content:budgets.length===1?'':'{"purpose":"Reviewed"}'}}]})};
+  }});
+  const response=await fetch(url+'/api/ai/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({review:true,messages:[{role:'user',content:'Review'}]})});
+  assert.equal(response.status,200);assert.deepEqual(budgets,[16384,32768]);
+});
