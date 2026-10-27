@@ -1,6 +1,6 @@
 # Analysis coverage review sample
 
-Open this folder in the app to review task 2. You can choose **Review analysis coverage** on the preparation screen without an AI key or sending code to a provider. The map still requires generated explanations before opening.
+Open this folder in the app to review task 2. In default selective mode, the map and **Analysis coverage** report open without an AI key or sending code to a provider. In full mode, **Review analysis coverage** is available on the preparation screen before generation completes.
 
 This is an analysis fixture, not an executable application. `example-payment-sdk` and `example-queue-sdk` deliberately have no supplied implementation. Do not install them.
 

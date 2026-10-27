@@ -1,0 +1,30 @@
+{
+  "explanationMode": "selective",
+  "provider": {
+    "baseUrl": "https://api.deepseek.com",
+    "model": "deepseek-flash"
+  },
+  "draft": {
+    "thinking": "disabled",
+    "reasoningEffort": "low",
+    "maxTokens": 2048,
+    "retryMaxTokens": 4096
+  },
+  "review": {
+    "thinking": "disabled",
+    "reasoningEffort": "low",
+    "maxTokens": 2048,
+    "retryMaxTokens": 4096
+  },
+  "followUp": {
+    "thinking": "disabled",
+    "reasoningEffort": "low",
+    "maxTokens": 2048,
+    "retryMaxTokens": 4096
+  },
+  "timeouts": {
+    "requestMs": 300000,
+    "cardMs": 1200000,
+    "followUpMs": 100000
+  }
+}

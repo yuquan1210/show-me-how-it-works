@@ -177,7 +177,7 @@ test('coarse contexts require all selected operations and cached cards obey evid
   const fn=jobs.find(j=>j.fn?.name==='createBooking'),evidence=jobContext(project,fn);
   assert.throws(()=>validateEvidenceCard(card,evidence.context),/normalization/);
   const cache=new ExplanationCache(),config={url:'https://api.deepseek.com',model:'mock'};
-  cache.put(await digest(JSON.stringify([config.url,config.model,evidence.revision])),card);
+  cache.put(await digest(JSON.stringify([config.url,config.model,'legacy',evidence.revision])),card);
   const queue=new ExplanationQueue({cache});await queue.setProject(project,[fn],config);
   assert.equal(queue.states.get(fn.id).status,'queued');
 });

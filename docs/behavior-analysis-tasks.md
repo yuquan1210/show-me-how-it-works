@@ -2,6 +2,8 @@
 
 Complete one task at a time. After implementation and verification, stop for the user's manual review. Start the next task only after the user approves continuing. Changes requested in review belong to the current task.
 
+Additional requested change — AI configuration and generation modes: implemented, awaiting manual review. `ai.config.json` now selects on-demand or full preparation, and owns model, endpoint, thinking/effort, budgets, and timeouts. Credentials use ignored `ai.config.local.json` with existing environment credentials as a fallback. Selective mode is the default and generates only explicitly requested cards; full mode preserves the preparation gate. Verified with 142 automated tests, a successful build, and browser checks for both modes, responsive generation, consent, cache reuse/invalidation, and missing credentials. Provider calls were mocked. See [AI configuration](ai-configuration.md). Task 3 remains pending review.
+
 ## Task 1 — Project-aware import resolution
 
 Status: approved for continuation.
@@ -63,14 +65,14 @@ Adjustment verification: all 126 tests pass, including responsibility grouping, 
 Manual review:
 
 1. Start the app and open `examples/analysis-coverage`.
-2. Before approving AI generation, choose **Review analysis coverage** on the preparation screen. No key or provider request is required for this report.
+2. In default selective mode, choose **Analysis coverage** on the canvas. In full mode, choose **Review analysis coverage** on the preparation screen. No key or provider request is required for this report.
 3. Check **Unresolved operations** for the notification callback. It must have a reason and location, without a guessed implementation.
 4. Select **Module dependencies**, then `src/booking/index.ts`; inspect its re-export and type-only records.
 5. Select `src/main.ts`, then **Callbacks passed**. The timer callback must say invocation and timing are not established.
-6. With explanations available, inspect Components: Application entry, Booking, and Startup are the three cards. Booking details contain its public exports, data, and types; types are marked shared with Application entry. Functions still show the explicit constructor, methods, and inline callback.
+6. Inspect Components: Application entry, Booking, and Startup are the three cards. Booking details contain its public exports, data, and types; types are marked shared with Application entry. Functions still show the explicit constructor, methods, and inline callback. Selective mode does not require AI cards before exploration.
 7. Run `npm test` to verify configuration membership, coverage, evidence, history compatibility/privacy, and graph layout regressions.
 
-Remaining limits: counts describe the imported supported source snapshot; excluded or oversized files are not counted as analyzed. Runtime traces, framework entry-point discovery, execution order, callback invocation/timing, implicit constructor/accessor calls, and complete dynamic dispatch remain outside this task. Non-literal module locations stay unresolved. External implementations and package exports are not inspected. Reports in history describe the full source snapshot for the selected commit, independently of workflow focus; module/function reports filter those records. The AI preparation gate controls access to the canvas.
+Remaining limits: counts describe the imported supported source snapshot; excluded or oversized files are not counted as analyzed. Runtime traces, framework entry-point discovery, execution order, callback invocation/timing, implicit constructor/accessor calls, and complete dynamic dispatch remain outside this task. Non-literal module locations stay unresolved. External implementations and package exports are not inspected. Reports in history describe the full source snapshot for the selected commit, independently of workflow focus; module/function reports filter those records. AI preparation gates the canvas only when full mode is configured.
 
 ## Task 3 — Operation-based workflow discovery
 

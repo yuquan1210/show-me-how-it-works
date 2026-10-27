@@ -140,7 +140,7 @@ Example JSON for a simple form: {"purpose":"Lets a user add a task to the shared
   const call=async(review=false)=>{
     const response=await fetcher('/api/ai/chat',{
     method:'POST',signal,headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({model:config.model,review,response_format:{type:'json_object'},max_tokens:1200,
+    body:JSON.stringify({review,phase:review?'review':'draft',response_format:{type:'json_object'},
       messages})});
   if(!response.ok){const detail=await response.json().catch(()=>({}));const error=new Error(detail.error||`Provider error (${response.status}). Check the server configuration.`);error.pause=true;throw error;}
     return response.json();
@@ -175,11 +175,11 @@ export class ExplanationCache {
 }
 export class ExplanationQueue {
   constructor({request=requestExplanation,cache=new ExplanationCache(),onChange=()=>{}}={}) {
-    Object.assign(this,{request,cache,onChange});this.jobs=[];this.states=new Map();this.epoch=0;this.enabled=false;
+    Object.assign(this,{request,cache,onChange});this.jobs=[];this.states=new Map();this.epoch=0;this.enabled=false;this.requested=new Set();
   }
   stop(){this.enabled=false;this.epoch++;this.controller?.abort();for(const s of this.states.values())if(s.status==='loading')s.status='queued';this.onChange();}
   async setProject(model,jobs,config,{resume=false}={}) {
-    const prior=this.states;this.stop();const epoch=this.epoch;this.config={...config};this.states=new Map();
+    const prior=this.states;this.stop();const epoch=this.epoch;this.config={...config};this.states=new Map();this.requested=new Set();
     const depths=new Map();
     const depth=(id,seen=new Set())=>{
       if(seen.has(id))return 0;if(depths.has(id))return depths.get(id);
@@ -191,25 +191,35 @@ export class ExplanationQueue {
     this.jobs=[...jobs].sort((a,b)=>rank(a)-rank(b)||(rank(a)===0?depth(a.id)-depth(b.id):0));
     await Promise.all(jobs.map(async job=>{
       const {context,revision}=jobContext(model,job);
-      const key=await digest(JSON.stringify([config.url,config.model,revision]));
+      const key=await digest(JSON.stringify([config.url,config.model,config.configFingerprint||'legacy',revision]));
       if(epoch!==this.epoch)return;
       let card=this.cache.get(key);const old=prior.get(job.id);
       if(card)try{validateEvidenceCard(card,context);}catch{card=null;}
-      this.states.set(job.id,{key,context,status:card?'ready':'queued',card:card||old?.card||null,stale:!card&&!!old?.card});
+      this.states.set(job.id,{key,context,status:card?'ready':config.explanationMode==='selective'?'idle':'queued',card:card||old?.card||null,stale:!card&&!!old?.card});
     }));
     if(epoch!==this.epoch)return;this.onChange();if(resume)this.start();
   }
-  start(){if(this.enabled)return;this.enabled=true;this.onChange();this.run(this.epoch);}
+  start(ids){
+    if(this.config?.explanationMode==='selective'){
+      for(const id of ids||[]){const state=this.states.get(id);if(!state)continue;
+        if(state.status==='idle'||state.status==='error')state.status='queued';
+        if(state.status!=='ready'||state.stale)this.requested.add(id);
+      }
+      if(!this.requested.size)return;
+    }
+    if(this.enabled)return;this.enabled=true;this.onChange();this.run(this.epoch);
+  }
   prioritize(ids){const wanted=new Set(ids);this.jobs.sort((a,b)=>Number(wanted.has(b.id))-Number(wanted.has(a.id)));}
-  retry(id){const s=this.states.get(id);if(s?.status==='error')s.status='queued';this.prioritize([id]);this.start();}
+  retry(id){const s=this.states.get(id);if(s?.status==='error')s.status='queued';this.prioritize([id]);this.start([id]);}
   async run(epoch){
     while(this.enabled&&epoch===this.epoch){
       const functionsReady=this.jobs.filter(j=>j.kind==='function').every(j=>this.states.get(j.id)?.status==='ready');
-      const job=this.jobs.find(j=>this.states.get(j.id)?.status==='queued'&&(j.kind==='function'||functionsReady));
+      const selective=this.config.explanationMode==='selective';
+      const job=this.jobs.find(j=>this.states.get(j.id)?.status==='queued'&&(selective?this.requested.has(j.id):j.kind==='function'||functionsReady));
       if(!job){this.enabled=false;this.onChange();return;}
       const state=this.states.get(job.id);state.status='loading';state.startedAt=Date.now();state.stage='Waiting for DeepSeek';this.controller=new AbortController();this.onChange();
       const controller=this.controller;
-      const timeout=setTimeout(()=>controller.abort(),1200000);
+      const timeout=setTimeout(()=>controller.abort(),this.config.cardTimeoutMs||1200000);
       const sourceIds=new Set(state.context.source.map(s=>s.id));let summaryBudget=12000;
       const sourceReviewedCards=[];
       for(const [id,s] of this.states)if(sourceIds.has(id)&&s.status==='ready'&&!s.stale){
@@ -218,6 +228,7 @@ export class ExplanationQueue {
       }
       try{const card=await this.request(this.config,{...state.context,sourceReviewedCards},this.controller.signal,undefined,stage=>{if(epoch===this.epoch){state.stage=stage;this.onChange();}});if(epoch!==this.epoch)return;
         state.card=card;state.stale=false;state.status='ready';this.cache.put(state.key,card);
+        this.requested.delete(job.id);
       }catch(error){if(epoch!==this.epoch)return;state.status='error';state.error=error.name==='AbortError'?'Request timed out. Retry.':error instanceof SyntaxError?'Provider returned an invalid explanation. Retry.':error instanceof TypeError?'Connection failed. Check network access and whether the provider permits browser requests.':error.message;
         if(error.pause||error instanceof TypeError||error.name==='AbortError')this.enabled=false;
       }finally{clearTimeout(timeout);}
@@ -231,6 +242,7 @@ export function explanationProgress(queue,now=Date.now()) {
   if(job){const state=queue.states.get(job.id);const seconds=Math.max(0,Math.floor((now-state.startedAt)/1000));return `${state.stage||'Generating'}: ${job.title} · ${seconds}s${seconds>=20?' · Still waiting':''}`;}
   if(states.length&&ready===states.length)return 'Complete · All explanations ready';
   if(states.some(s=>s.status==='error'))return queue.enabled?'Some explanations failed · continuing':'Stopped with errors · Retry to continue';
+  if(queue.config?.explanationMode==='selective'&&!queue.requested.size)return 'Choose a box to generate its explanation · No requests running';
   return queue.enabled?'Preparing next explanation…':'Paused · No requests running';
 }
 export function allExplanationsReady(queue) {

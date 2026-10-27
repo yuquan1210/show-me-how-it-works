@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:ai-ui": "node tests/ai-modes.browser.mjs"
   },
   "dependencies": {
     "typescript": "^5.9.3",

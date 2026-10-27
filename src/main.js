@@ -166,9 +166,10 @@ let model = createDemo(),
 
   flowStartedAt = 0,
   aiConfig = {
-    url: "https://api.deepseek.com",
+    url: "",
     configured: false,
-    model: "deepseek-flash",
+    model: "",
+    explanationMode: "selective",
   },
   aiCache = new Map();
 let historyData = createDemoHistory(), historyOpen = false, historyCommitSelected = false, historyPlayer = null,
@@ -206,10 +207,13 @@ function updateProjectGate() {
   if(!projectGate)return;
   const dialog=document.querySelector('#project-loading');if(!dialog)return;
   const states=[...explanationQueue.states.values()],ready=states.filter(s=>s.status==='ready'&&!s.stale).length;
+  if(projectGatePhase!=='mapping'&&!explanationPreparing&&aiConfig.explanationMode==='selective'){
+    projectGate=false;dialog.remove();drawGraph();fitGraph();toast('Project ready. Select a box to generate an AI explanation.');return;
+  }
   if(projectGatePhase==='generating'&&!explanationPreparing&&allExplanationsReady(explanationQueue)){projectGate=false;dialog.remove();drawGraph();fitGraph();toast('Project ready. All explanations are filled.');return;}
   const loading=projectGatePhase==='mapping'||explanationPreparing;
   const failed=states.filter(s=>s.status==='error');
-  dialog.innerHTML=`<h2>${loading?'Mapping your project':projectGatePhase==='consent'?'Prepare all explanations':'Preparing your project'}</h2><p>The canvas opens when every explanation is ready.</p><progress aria-label="Project preparation" ${loading?'':`max="${Math.max(states.length,1)}" value="${ready}"`}></progress><p role="status">${loading?'Reading core logic and building the explanation queue…':`${ready} of ${states.length} explanations ready`}</p>${projectGatePhase==='generating'?'<p data-explanation-live></p>':''}${!loading&&!aiConfig.configured?`<p role="alert">${esc(aiStatusMessage)}</p><button id="gate-check" class="primary-button">Check configuration again</button>`:''}${!loading&&projectGatePhase==='consent'&&aiConfig.configured?`<p>Analysis sends core source and dependency context to DeepSeek. Your key stays on the server. Provider charges may apply; generated text is cached on this device.</p><button id="gate-start" class="primary-button">Approve and generate all explanations</button>`:''}${failed.length?`<p role="alert">${failed.length} explanations failed. ${esc(failed[0].error||'Please retry.')}</p>`:''}${!loading&&projectGatePhase==='generating'?`<button id="gate-retry" class="primary-button">${explanationQueue.enabled?'Pause generation':failed.length?'Retry failed explanations':'Resume generation'}</button>`:''}<button id="gate-cancel" class="text-button">Cancel and return to sample</button>`;
+  dialog.innerHTML=`<h2>${loading?'Mapping your project':projectGatePhase==='consent'?'Prepare all explanations':'Preparing your project'}</h2><p>${aiConfig.explanationMode==='full'?'The canvas opens when every explanation is ready.':'Building the local map. AI explanations are generated only when requested.'}</p><progress aria-label="Project preparation" ${loading?'':`max="${Math.max(states.length,1)}" value="${ready}"`}></progress><p role="status">${loading?'Reading core logic and building the explanation queue…':`${ready} of ${states.length} explanations ready`}</p>${projectGatePhase==='generating'?'<p data-explanation-live></p>':''}${!loading&&!aiConfig.configured?`<p role="alert">${esc(aiStatusMessage)}</p><button id="gate-check" class="primary-button">Check configuration again</button>`:''}${!loading&&projectGatePhase==='consent'&&aiConfig.configured?`<p>Analysis sends core source and dependency context to DeepSeek. Your key stays on the server. Provider charges may apply; generated text is cached on this device.</p><button id="gate-start" class="primary-button">Approve and generate all explanations</button>`:''}${failed.length?`<p role="alert">${failed.length} explanations failed. ${esc(failed[0].error||'Please retry.')}</p>`:''}${!loading&&projectGatePhase==='generating'?`<button id="gate-retry" class="primary-button">${explanationQueue.enabled?'Pause generation':failed.length?'Retry failed explanations':'Resume generation'}</button>`:''}<button id="gate-cancel" class="text-button">Cancel and return to sample</button>`;
   dialog.querySelector('#gate-cancel').onclick=cancelProjectGate;
   if(dialog.querySelector('#gate-start'))dialog.querySelector('#gate-start').onclick=()=>{explanationConsent=true;projectGatePhase='generating';explanationQueue.start();updateProjectGate();};
   if(dialog.querySelector('#gate-check'))dialog.querySelector('#gate-check').onclick=async()=>{await checkAI();updateProjectGate();};
@@ -227,15 +231,16 @@ function explanationScope() {return boundaryScope ? `area:${boundaryScope.id}` :
 function explanationCard(id) {
   const state=explanationQueue.states.get(id);
   const status=state?.status;
-  const label=state?.stale ? 'Outdated · based on earlier code' : status==='ready' ? 'AI explanation · check against observed behavior' : status==='loading' ? `${state.stage||'Preparing explanation'}…` : status==='error' ? 'Explanation unavailable' : explanationConsent ? explanationQueue.enabled ? 'Queued · prioritized when selected' : 'Paused · resume to generate this explanation' : 'Basic analysis · AI not started';
-  return `<div class="explanation-label">${esc(label)}</div>${status==='error'?`<p>${esc(state.error)}</p><button class="text-button" data-explanation-retry="${esc(id)}">Retry explanation</button>`:''}${state?.card ? explanationFields(state.card) : status==='loading'||status==='queued'&&explanationConsent ? '<div class="explanation-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>' : '<p>Explore the mapped structure now. Generate AI explanations when you’re ready.</p>'}`;
+  const label=state?.stale ? 'Outdated · source or AI settings changed' : status==='ready' ? 'AI explanation · check against observed behavior' : status==='loading' ? `${state.stage||'Preparing explanation'}…` : status==='error' ? 'Explanation unavailable' : status==='idle' ? 'On demand · explanation not generated' : explanationConsent ? explanationQueue.enabled ? 'Queued for generation' : 'Paused · resume to generate this explanation' : 'Basic analysis · AI not started';
+  return `<div class="explanation-label">${esc(label)}</div>${status==='error'?`<p>${esc(state.error)}</p>`:''}${state?.card ? explanationFields(state.card) : status==='loading'||status==='queued'&&explanationConsent ? '<div class="explanation-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>' : '<p>Structural analysis is available. Generate an AI explanation for this box when you need it.</p>'}`;
 }
 function updateExplanations() {
   updateProjectGate();
   const strip=$('#explanation-progress');
   if(!strip || historyCommitSelected || model.kind==='demo')return;
   const states=[...explanationQueue.states.values()],ready=states.filter(s=>s.status==='ready').length,failed=states.filter(s=>s.status==='error').length;
-  strip.innerHTML=`<span role="status">Graph ready · ${explanationPreparing?'Preparing analysis queue…':`${ready} / ${states.length} explanations ready`}${failed?` · ${failed} unavailable`:''}</span><button class="text-button" id="explanation-start">${explanationQueue.enabled?'Pause explanations':explanationConsent?'Resume explanations':'Generate explanations'}</button><button class="text-button" id="explanation-summary">Explain this ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'}</button>`;
+  const selective=aiConfig.explanationMode==='selective';
+  strip.innerHTML=`<span role="status">${selective?'On-demand explanations':'Full project explanations'} · ${explanationPreparing?'Preparing analysis queue…':`${ready} / ${states.length} ready`}${failed?` · ${failed} unavailable`:''}</span><button class="text-button" id="explanation-start" ${selective&&!explanationQueue.requested.size?'hidden':''}>${explanationQueue.enabled?'Pause explanations':explanationConsent?'Resume requested explanations':'Generate all explanations'}</button><button class="text-button" id="explanation-summary">Explain this ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'}</button>`;
   $('#explanation-start').disabled=explanationPreparing;
   strip.insertAdjacentHTML('beforeend',`<div class="explanation-live" role="status" data-explanation-live></div><progress aria-label="Explanation completion" max="${Math.max(states.length,1)}" value="${ready}"></progress>`);
   updateExplanationClock();
@@ -245,28 +250,23 @@ function updateExplanations() {
   strip.hidden=complete;
   $('#explanation-start').onclick=()=>{
     if(explanationQueue.enabled){explanationQueue.stop();return;}
-    if(explanationConsent){for(const s of explanationQueue.states.values())if(s.status==='error')s.status='queued';explanationQueue.start();return;}
+    if(explanationConsent){for(const [id,s] of explanationQueue.states)if(s.status==='error'&&(!selective||explanationQueue.requested.has(id)))s.status='queued';explanationQueue.start();return;}
     showExplanationConsent();
   };
   $('#explanation-summary').onclick=()=>{
     const id=explanationScope();explanationQueue.prioritize([id]);
     modal(`<h2>${esc(selectedWorkflow?model.workflows.find(w=>w.id===selectedWorkflow)?.name||'Workflow':boundaryScope?.title||model.name)}</h2><div data-explanation-card="${esc(id)}"></div>`);updateExplanations();
   };
-  document.querySelectorAll('[data-explanation-card]').forEach(el=>el.innerHTML=explanationCard(el.dataset.explanationCard));
-  document.querySelectorAll('.generated-explanation').forEach(el=>{
-    if(explanationQueue.states.get(el.dataset.explanationCard)?.status==='loading')el.insertAdjacentHTML('beforeend','<p class="explanation-live" data-explanation-live></p>');
-    if(!complete)el.insertAdjacentHTML('beforeend',`<button class="text-button" data-explanation-control>${explanationQueue.enabled?'Pause explanations':explanationConsent?'Resume explanations':'Generate explanations'}</button>`);
-    if(explanationQueue.states.get(el.dataset.explanationCard)?.status==='ready')el.insertAdjacentHTML('beforeend',`<button class="text-button" data-explanation-regenerate="${esc(el.dataset.explanationCard)}">Regenerate explanation</button>`);
+  document.querySelectorAll('[data-explanation-card]').forEach(el=>{
+    const id=el.dataset.explanationCard,state=explanationQueue.states.get(id);
+    el.innerHTML=explanationCard(id);
+    if(state?.status==='loading')el.insertAdjacentHTML('beforeend','<p class="explanation-live" data-explanation-live></p>');
+    if(state?.status==='loading')el.insertAdjacentHTML('beforeend','<button class="text-button" data-explanation-pause>Pause generation</button>');
+    else el.insertAdjacentHTML('beforeend',`<button class="text-button" data-generate-explanation="${esc(id)}" data-regenerate="${state?.status==='ready'}" ${explanationPreparing||!state?'disabled':''}>${state?.status==='ready'?'Regenerate explanation':state?.status==='error'?'Retry explanation':selective?'Generate explanation':'Generate all explanations'}</button>`);
   });
-  document.querySelectorAll('[data-explanation-regenerate]').forEach(el=>el.onclick=()=>{
-    if(!explanationConsent)return showExplanationConsent();
-    const state=explanationQueue.states.get(el.dataset.explanationRegenerate);state.status='queued';state.stale=true;
-    explanationQueue.prioritize([el.dataset.explanationRegenerate]);explanationQueue.start();updateExplanations();
-  });
-  document.querySelectorAll('[data-explanation-control]').forEach(el=>el.onclick=()=>$('#explanation-start').click());
-  document.querySelectorAll('[data-explanation-retry]').forEach(el=>el.onclick=()=>{
-    if(!explanationConsent)return showExplanationConsent();explanationQueue.retry(el.dataset.explanationRetry);
-  });
+  document.querySelectorAll('[data-explanation-pause]').forEach(el=>el.onclick=()=>explanationQueue.stop());
+  document.querySelectorAll('[data-generate-explanation]').forEach(el=>el.onclick=()=>requestBoxExplanation(el.dataset.generateExplanation,{regenerate:el.dataset.regenerate==='true'}));
+  updateExplanationClock();
 }
 function updateExplanationClock(){document.querySelectorAll('[data-explanation-live]').forEach(el=>el.textContent=explanationConsent?explanationProgress(explanationQueue):'Ready to start · no code sent');}
 setInterval(updateExplanationClock,1000);
@@ -279,10 +279,29 @@ async function prepareExplanations(resume=false) {
   if(version!==projectLoadVersion)return;
   explanationPreparing=false;updateExplanations();
 }
-async function showExplanationConsent() {
+function startExplanationRequest(ids,regenerate=false) {
+  for(const id of ids||[]){const state=explanationQueue.states.get(id);if(!state)continue;
+    if(regenerate){state.status='queued';state.stale=true;}else if(state.status==='error')state.status='queued';
+  }
+  if(ids)explanationQueue.prioritize(ids);
+  explanationQueue.start(aiConfig.explanationMode==='selective'?ids:undefined);updateExplanations();
+}
+async function requestBoxExplanation(id,{regenerate=false}={}) {
+  if(explanationPreparing||!explanationQueue.states.has(id))return;
+  if(!explanationConsent)return showExplanationConsent({ids:[id],regenerate});
   if(!await checkAI()){showSettings();return;}
-  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>Generate project explanations?</h2><p class="modal-intro">Generate explanations before opening the map.</p><div class="privacy-note"><p>Send core JavaScript/TypeScript implementation, names, paths, and related dependency context from this project to <strong>${esc(new URL(aiConfig.url).hostname)}</strong>, using ${esc(aiConfig.model)}. Provider charges may apply. Source may contain sensitive information: review your project before proceeding.</p></div><p>Generated explanations are cached on this device. Source and your API key are not stored in the cache. Pause at any time. Switching projects or providers requires approval again.</p><button class="primary-button" id="approve-explanations">Approve and start analysis</button>`);
-  $('#approve-explanations').onclick=()=>{explanationConsent=true;$('#modal').close();explanationQueue.start();updateExplanations();};
+  startExplanationRequest([id],regenerate);
+}
+async function showExplanationConsent({ids,regenerate=false}={}) {
+  const version=projectLoadVersion;
+  if(!await checkAI()){showSettings();return;}
+  if(version!==projectLoadVersion)return;
+  const selective=aiConfig.explanationMode==='selective';
+  if(selective&&!ids?.length)return;
+  const title=selective?explanationQueue.jobs.find(j=>j.id===ids[0])?.title||'selected box':model.name;
+  const host=aiConfig.url?new URL(aiConfig.url).hostname:'the configured AI provider';
+  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>${selective?'Explain':'Generate explanations for'} ${esc(title)}?</h2><p class="modal-intro">${selective?'Only the requested card will be generated. You can keep exploring the map.':'Generate all explanations for this project.'}</p><div class="privacy-note"><p>Allow this project's requested implementation, names, paths, and supporting dependency context to be sent to <strong>${esc(host)}</strong>, using ${esc(aiConfig.model)}. ${selective?'Future boxes are sent only when you explicitly request their explanation.':'All project cards will be generated.'} Provider charges may apply.</p></div><p>Generated explanations are cached on this device. Source and your API key are not stored in the cache. Pause at any time. Opening a new project requires approval again.</p><button class="primary-button" id="approve-explanations">Approve and ${selective?'explain this box':'start analysis'}</button>`);
+  $('#approve-explanations').onclick=()=>{if(version!==projectLoadVersion)return;explanationConsent=true;$('#modal').close();startExplanationRequest(ids,regenerate);};
 }
 const layerNames = {
   controller: "Entry points",
@@ -989,7 +1008,7 @@ async function askAI(question, n, fn) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: aiConfig.model,
+          phase: 'followUp',
           messages: [
             {
               role: "system",
@@ -998,9 +1017,8 @@ async function askAI(question, n, fn) {
             },
             { role: "user", content: JSON.stringify({ question, context }) },
           ],
-          max_tokens: 550,
         }),
-        signal: AbortSignal.timeout(100000),
+        signal: AbortSignal.timeout(aiConfig.followUpTimeoutMs||100000),
       },
     );
     if (!r.ok) {const detail=await r.json().catch(()=>({}));throw new Error(detail.error||`DeepSeek request failed (${r.status}).`);}
@@ -1054,13 +1072,19 @@ async function checkAI() {
     if(typeof status.configured!=='boolean')throw new Error('unavailable');
     aiConfig.configured=status.configured;
     aiConfig.model=status.model||aiConfig.model;
-    aiStatusMessage=status.configured?'DeepSeek is configured on the server. Your key is never sent to the browser.':'DEEPSEEK_API_KEY is not configured. Set it in the server environment or .env.local, then restart the app. The graph remains available.';
+    aiConfig.url=status.url||aiConfig.url;
+    aiConfig.explanationMode=status.explanationMode==='full'?'full':'selective';
+    aiConfig.configFingerprint=status.configFingerprint||'';
+    aiConfig.cardTimeoutMs=status.cardTimeoutMs;
+    aiConfig.followUpTimeoutMs=status.followUpTimeoutMs;
+    aiConfig.draft=status.draft;aiConfig.review=status.review;
+    aiStatusMessage=status.configured?'AI is configured on the server. Your key is never sent to the browser.':'Set provider.apiKey in ai.config.local.json, or DEEPSEEK_API_KEY in the server environment, then restart. Selective mode opens the graph without an AI key.';
   }catch{aiConfig.configured=false;aiStatusMessage='AI server unavailable. Run the app locally with npm run dev. This static page cannot read environment variables.';}
   return aiConfig.configured;
 }
 async function showSettings() {
   await checkAI();
-  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>DeepSeek status</h2><p class="modal-intro" role="status">${esc(aiStatusMessage)}</p><p>Model: ${esc(aiConfig.model)}</p><div class="privacy-note"><p>Authentication uses the server’s DEEPSEEK_API_KEY. No key entry is needed here. Background analysis still requires approval before sending project code.</p></div><button class="text-button" id="refresh-ai-status">Check again</button><button class="text-button" id="clear-explanations">Clear cached explanations on this device</button>`);
+  modal(`<span class="modal-symbol">${icon('sparkles')}</span><h2>AI configuration</h2><p class="modal-intro" role="status">${esc(aiStatusMessage)}</p><p>Model: ${esc(aiConfig.model||'Unavailable')}</p><p>Explanations: ${aiConfig.explanationMode==='full'?'Full project · preparation blocks the canvas':'Selective · generate individual boxes'}</p>${aiConfig.review?`<p>Accuracy review: thinking ${esc(aiConfig.review.thinking)}${aiConfig.review.thinking==='enabled'?` · ${esc(aiConfig.review.reasoningEffort)} effort`:''}</p>`:''}<div class="privacy-note"><p>Edit ai.config.json for mode, model, thinking, token limits, and timeouts. Put private credentials in ai.config.local.json. Restart the server after changes. Project code is sent only after approval or an explicit question.</p></div><button class="text-button" id="refresh-ai-status">Check again</button><button class="text-button" id="clear-explanations">Clear cached explanations on this device</button>`);
   $('#refresh-ai-status').onclick=showSettings;
   $('#clear-explanations').onclick=()=>{explanationQueue.cache.clear();toast('Cached explanations cleared.');};
 }
