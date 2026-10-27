@@ -34,7 +34,8 @@ try {
     model.updated = Date.parse(date);
     for(const n of model.nodes) {
       n.fingerprint = digest(n.fingerprint);
-      for(const f of n.functionDetails) {f.fingerprint=digest(f.raw);delete f.raw;}
+      if(n.stateFingerprint!==undefined)n.stateFingerprint=digest(n.stateFingerprint);
+      for(const f of n.functionDetails) {f.fingerprint=digest(f.fingerprint||f.raw);delete f.raw;}
     }
     const commit = {sha,date,message:subject.join(' '),model,skippedFiles:skipped.length};
     bytes += Buffer.byteLength(JSON.stringify(commit));

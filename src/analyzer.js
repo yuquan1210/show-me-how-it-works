@@ -4,6 +4,9 @@ import { isSource } from './source-files.js';
 import { createProjectProgram } from './project-config.js';
 import { moduleDependencies, collectCallRecords, sourceLocation } from './analysis-coverage.js';
 import { coverageCounts, COVERAGE_LIMITS } from './coverage-summary.js';
+import { executionPaths, pathSummary } from './execution-paths.js';
+import { expressEntries } from './framework-entry-points.js';
+import { discoverWorkflows } from './workflows.js';
 export { isSource } from './source-files.js';
 export const words = (s) =>
   s
@@ -27,7 +30,9 @@ function actionText(name) {
         ? `Removes ${w.replace(/^(Delete|Remove) /, "").toLowerCase()}.`
         : /^(update|set)/i.test(name)
           ? `Updates ${w.replace(/^(Update|Set) /, "").toLowerCase()}.`
-          : `Handles ${w.toLowerCase()}.`;
+          : /^(calculate|compute)/i.test(name)
+            ? `Computes ${w.replace(/^(Calculate|Compute) /, "").toLowerCase()}.`
+            : `Handles ${w.toLowerCase()}.`;
 }
 function declaredName(name) {
   return name && (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name) || ts.isPrivateIdentifier(name)) ? name.text : null;
@@ -102,6 +107,7 @@ export function analyzeFiles(files, name = "My application") {
   const project = createProjectProgram(files);
   const { program } = project;
   const checker = program.getTypeChecker();
+  const printer=ts.createPrinter({removeComments:true});
   const declarations = new Map();
   const nodes = [],
     errors = [],
@@ -130,6 +136,12 @@ export function analyzeFiles(files, name = "My application") {
     const evidence={id, declarations:moduleDeclarations.join('\n'), imports:moduleImports,
       resolvedImports: [...new Set(dependencies.records.filter(d => d.status === 'resolved').map(d => d.to))], functions:[]};
     explanationEvidence.push(evidence);
+    const isFunctionValue=d=>d.initializer&&(ts.isArrowFunction(d.initializer)||ts.isFunctionExpression(d.initializer));
+    const stateFingerprint=sf.statements.flatMap(st=>{
+      if(ts.isVariableStatement(st))return st.declarationList.declarations.filter(d=>!isFunctionValue(d)).map(d=>`${st.declarationList.flags&ts.NodeFlags.Const?'const':'let'} ${printer.printNode(ts.EmitHint.Unspecified,d,sf)}`);
+      if(ts.isClassDeclaration(st))return st.members.filter(m=>ts.isPropertyDeclaration(m)&&!isFunctionValue(m)).map(m=>printer.printNode(ts.EmitHint.Unspecified,m,sf));
+      return ts.isInterfaceDeclaration(st)||ts.isTypeAliasDeclaration(st)||ts.isEnumDeclaration(st)?[printer.printNode(ts.EmitHint.Unspecified,st,sf)]:[];
+    }).join('\n');
     const visit = (n) => {
       if (
         (ts.isFunctionDeclaration(n) ||
@@ -213,6 +225,10 @@ export function analyzeFiles(files, name = "My application") {
             name: fnName,
             title: ts.isConstructorDeclaration(n) ? `${ownerName} constructor` : ts.isGetAccessor(n) ? `Read ${words(fnName)}` : ts.isSetAccessor(n) ? `Set ${words(fnName)}` : /^(callback|anonymous)@/.test(fnName) ? `${anonymousCallback ? 'Callback' : 'Anonymous operation'} at line ${position.line}, column ${position.column}` : fnName === 'default' ? 'Default export' : words(fnName),
             kind: ts.isConstructorDeclaration(n) ? 'constructor' : ts.isGetAccessor(n) || ts.isSetAccessor(n) ? 'accessor' : /^(callback|anonymous)@/.test(fnName) ? 'callback' : 'function',
+            ...(ownerName?{ownerName}:{}),
+            topLevel:n.parent===sf||ts.isVariableDeclaration(n.parent)&&n.parent.parent?.parent?.parent===sf,
+            visibility:fnName.startsWith('#')||n.modifiers?.some(m=>m.kind===ts.SyntaxKind.PrivateKeyword)?'private':n.modifiers?.some(m=>m.kind===ts.SyntaxKind.ProtectedKeyword)?'protected':'public',
+            fingerprint:printer.printNode(ts.EmitHint.Unspecified,n,sf),
             ...position,
             inputs: n.parameters.map(
               (p) =>
@@ -283,7 +299,8 @@ export function analyzeFiles(files, name = "My application") {
       evidence: "Parsed structure · inferred labels",
       source: path,
       status: "unchanged",
-      fingerprint: text,
+      fingerprint: printer.printFile(sf),
+      stateFingerprint,
     });
   }
   const edges = [],
@@ -297,7 +314,6 @@ export function analyzeFiles(files, name = "My application") {
       )
         edges.push([path, found]);
     }
-  const entries = nodes.filter((n) => n.layer === "controller");
   const functionEdges = [];
   const functionIds = new Set(declarations.values());
   for (const {sf, path, records, loaders} of sourceModules) {
@@ -309,34 +325,43 @@ export function analyzeFiles(files, name = "My application") {
     }
     for (const {from, to} of result.calls) if (to && functionIds.has(from) && !functionEdges.some(([a,b]) => a === from && b === to)) functionEdges.push([from, to]);
   }
+  const analyzedFunctions=new Map(nodes.flatMap(node=>node.functionDetails.map(fn=>[fn.id,fn])));
+  for(const [declaration,id] of declarations){
+    const source=declaration.getSourceFile();
+    const fn=analyzedFunctions.get(id);
+    fn.behavior=executionPaths(declaration,source,checker,declarations);
+    Object.assign(fn,pathSummary(fn.behavior));
+  }
+  for(const node of nodes)for(const field of ['outputs','decisions','effects','failures','limitations'])node[field]=[...new Set(node.functionDetails.flatMap(fn=>fn[field]||[]))];
   coverage.sourceFiles = sourceModules.length;coverage.mappedModules = nodes.length;
   for(const node of nodes)if(node.componentRole==='support'&&coverage.calls.some(c=>c.module===node.id&&c.from===node.id&&!(c.kind==='construct'&&c.status==='external'&&c.reason.startsWith('Runtime-provided')&&['Map','Set','WeakMap','WeakSet','Date','RegExp','Object','Array'].includes(c.label))))node.componentRole='startup';
   coverage.modules = nodes.map(n => n.id);
   coverage.counts = coverageCounts(coverage, functionIds.size);
-  const roots = entries.length
-    ? entries
-    : nodes.filter((n) => !edges.some((e) => e[1] === n.id));
-  const reach = (id) => {
-    const seen = new Set([id]),
-      q = [id];
-    while (q.length) {
-      const current = q.shift();
-      for (const [a, b] of edges)
-        if (a === current && !seen.has(b)) {
-          seen.add(b);
-          q.push(b);
-        }
-    }
-    return [...seen];
+  const exportsByModule=new Map();
+  const exportedIds=symbol=>{
+    if(symbol.flags&ts.SymbolFlags.Alias)symbol=checker.getAliasedSymbol(symbol);
+    return (symbol.declarations||[]).flatMap(declaration=>{
+      const id=declarations.get(declaration)||declarations.get(declaration.initializer);
+      if(id)return [id];
+      return ts.isClassDeclaration(declaration)?declaration.members.map(member=>declarations.get(member)||declarations.get(member.initializer)).filter(Boolean):[];
+    });
   };
-  const workflows = roots.slice(0, 20).map((n) => ({
-    id: n.id,
-    name: n.title,
-    description: "Inferred from module dependencies",
-    icon: n.icon,
-    nodes: reach(n.id),
-    steps: reach(n.id).length,
-  }));
+  for(const {sf,path} of sourceModules){
+    const symbol=checker.getSymbolAtLocation(sf);
+    exportsByModule.set(path,symbol?[...new Set(checker.getExportsOfModule(symbol).flatMap(exportedIds))]:[]);
+  }
+  for(const node of nodes)for(const fn of node.functionDetails)fn.exported=exportsByModule.get(node.id)?.includes(fn.id)||false;
+  const framework=expressEntries(sourceModules,checker,declarations);
+  for(const binding of framework.bindings){
+    const fn=analyzedFunctions.get(binding.entryFunctionId);
+    const matches=framework.bindings.filter(other=>other.entryFunctionId===binding.entryFunctionId);
+    if(fn?.kind==='callback'&&matches.length===1){
+      fn.title=`${binding.method} ${binding.path} handler`;
+      fn.summary='Handles a registered HTTP request. Registration does not establish execution.';
+    }
+  }
+  for(const node of nodes)node.functions=node.functionDetails.map(fn=>fn.title);
+  const workflows=discoverWorkflows({nodes,edges,functionEdges,coverage},{exportsByModule,bindings:framework.bindings});
   return {
     name,
     kind: "local",
@@ -346,7 +371,7 @@ export function analyzeFiles(files, name = "My application") {
     workflows,
     updated: Date.now(),
     errors,
-    analysisWarnings: [...new Set(project.warnings)],
+    analysisWarnings: [...new Set([...project.warnings,...framework.diagnostics.map(d=>`${d.module}:${d.line}: ${d.reason}`)])],
     coverage,
     fileCount: files.filter((f) => isSource(f.path)).length,
     explanationEvidence,
@@ -393,7 +418,7 @@ export function diffModels(before, after) {
       const prior = previousFunctions.get(fn.id);
       fn.status = !prior
         ? "added"
-        : prior.raw !== fn.raw
+        : (prior.fingerprint || prior.raw) !== (fn.fingerprint || fn.raw)
           ? "modified"
           : "unchanged";
     }

@@ -1,4 +1,5 @@
 import { createDemo, applyDemoChange, applyLargeDemoChange } from './demo.js';
+import {validatePaths} from './path-metadata.js';
 import { validateCoverage } from './coverage-summary.js';
 
 const clean = model => {
@@ -107,6 +108,14 @@ export function validateHistory(value) {
     for(const [field,known] of [['edges',nodeIds],['functionEdges',fnIds]])
       if(!Array.isArray(m[field]) || !m[field].every(e => Array.isArray(e) && e.length === 2 && e.every(id => known.has(id)))) bad();
     if(!m.workflows.every(w => text(w.id) && text(w.name) && strings(w.nodes) && w.nodes.every(id => nodeIds.has(id)))) bad();
+    if(new Set(m.workflows.map(w=>w.id)).size!==m.workflows.length)bad();
+    for(const w of m.workflows){
+      if(w.entryId!==undefined&&!nodeIds.has(w.entryId))bad();
+      if(w.entryFunctionId!==undefined&&!fnIds.has(w.entryFunctionId))bad();
+      for(const field of ['functionIds','entryFunctions'])if(w[field]!==undefined&&(!strings(w[field])||!w[field].every(id=>fnIds.has(id))))bad();
+      if(w.trigger!==undefined&&(!w.trigger||!text(w.trigger.kind)||!text(w.trigger.label)||!text(w.trigger.evidence)))bad();
+    }
+    for(const fn of m.nodes.flatMap(n=>n.functionDetails))if(fn.behavior!==undefined)validatePaths(fn.behavior,fnIds);
     if(m.coverage !== undefined) validateCoverage(m.coverage, m);
   }
   // Imported files cannot override the sample label or inject source into AI context.
@@ -117,9 +126,10 @@ export function validateHistory(value) {
     c.model.name = String(value.name || 'Imported history').slice(0,200);
     delete c.model.explanationEvidence;
     if(c.model.coverage) c.model.coverage = validateCoverage(c.model.coverage, c.model);
+    const knownFunctions=new Set(c.model.nodes.flatMap(n=>n.functionDetails.map(f=>f.id)));
     for(const n of c.model.nodes) {
       delete n.raw;
-      for(const f of n.functionDetails) delete f.raw;
+      for(const f of n.functionDetails){delete f.raw;if(f.behavior)f.behavior=validatePaths(f.behavior,knownFunctions);}
     }
   }
   return result;

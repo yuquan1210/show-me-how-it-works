@@ -42,7 +42,7 @@ test("workflow follows dependencies without looping", () => {
       },
     ].filter((f, i, a) => a.findLastIndex((x) => x.path === f.path) === i),
   );
-  assert.equal(m.workflows[0].nodes.length, 2);
+  assert.equal(m.workflows.find(w=>w.entryId==='controllers/orders.ts').nodes.length, 2);
 });
 test("diff identifies additions, edits, and removals", () => {
   const a = analyzeFiles(files),

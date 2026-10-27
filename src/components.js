@@ -71,7 +71,7 @@ export function componentModel(model) {
       functions:functionDetails.map(f=>f.title),functionDetails,status,
       summary:functionDetails.length ? `${functionDetails.length} operations${support.length?` with ${support.length} supporting source${support.length===1?'':'s'}`:''}. Responsibility inferred from project structure.`
         : implementations.length ? 'Runs application initialization. External or unresolved behavior is listed in analysis coverage.' : 'Shared data and declarations with no mapped owning operation.',
-      inputs:gather('inputs'),outputs:gather('outputs'),effects:gather('effects'),decisions:gather('decisions'),
+      inputs:gather('inputs'),outputs:gather('outputs'),effects:gather('effects'),decisions:gather('decisions'),failures:gather('failures'),limitations:gather('limitations'),
       layer:implementations.some(n=>n.layer==='controller')?'controller':primary.layer,
       evidence:'Responsibility inferred from structure · supporting sources included',
       impact:changed.length&&changed.every(n=>n.impact==='possible')?'possible':'within',

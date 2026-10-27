@@ -59,6 +59,9 @@ import { isAnalysisInput } from './source-files.js';
 import { coverageSummary } from './coverage-summary.js';
 import { coverageMarkup } from './coverage-view.js';
 import { componentModel } from './components.js';
+import {historyRefresh} from './history-refresh.js';
+import { scopeWorkflowModel } from './workflows.js';
+import { workflowCardId } from './explanations.js';
 const icons = {
   Network,
   Box,
@@ -187,7 +190,7 @@ function explanationFields(card) {
   return CARD_FIELDS.map((key,i)=>`<div class="explanation-field"><strong>${CARD_LABELS[i]}</strong><span>${esc(card[key]||'Not established')}</span></div>`).join('');
 }
 function graphSummary(node) {
-  const id=node.group ? `area:${node.id}` : node.id;
+  const id=node.isFunction?node.id:workflowCardId(node.group ? `area:${node.id}` : node.id,activeWorkflow());
   const state=model.kind!=='demo' && !historyCommitSelected && explanationQueue.states.get(id);
   return state?.status==='ready' ? state.card.purpose : node.group ? node.summary : node.summary.split('.')[0];
 }
@@ -227,7 +230,7 @@ function updateProjectGate() {
 let explanationStorage;
 try { explanationStorage = window.localStorage; } catch {}
 const explanationQueue = new ExplanationQueue({cache:new ExplanationCache(explanationStorage),onChange:()=>updateExplanations()});
-function explanationScope() {return boundaryScope ? `area:${boundaryScope.id}` : selectedWorkflow ? `workflow:${selectedWorkflow}` : 'overview';}
+function explanationScope() {return boundaryScope ? workflowCardId(`area:${boundaryScope.id}`,activeWorkflow()) : selectedWorkflow ? `workflow:${selectedWorkflow}` : 'overview';}
 function explanationCard(id) {
   const state=explanationQueue.states.get(id);
   const status=state?.status;
@@ -322,6 +325,9 @@ function toast(message) {
 function activeWorkflow() {
   return historyCommitSelected ? null : model.workflows.find((w) => w.id === selectedWorkflow);
 }
+function visibleSourceModel(){const workflow=activeWorkflow();return workflow?scopeWorkflowModel(model,workflow):model;}
+function visibleComponents(){return componentModel(visibleSourceModel());}
+function aiAnswerKey(node,fn){return [activeWorkflow()?.id||boundaryScope?.id||'all',node.id,fn?.id||'component'].join(':');}
 function selectedHistoryEntry() { return historyWorkflows.find(w=>w.id===historySelection) || null; }
 function historySidebar() {
   const index=historyPlayer?.index ?? 0;
@@ -384,9 +390,9 @@ function syncHistoryState() {
   }
   const commit = historyData?.commits[historyPlayer?.index];
   if (!commit) return;
-  const counts = ["added","modified","removed"].map(status => `${componentModel(model).nodes.filter(n=>n.status===status).length} ${status}`).join(" · ");
+  const counts = ["added","modified","removed"].map(status => `${visibleComponents().nodes.filter(n=>n.status===status).length} ${status}`).join(" · ");
   $(".canvas-context").childNodes[1].textContent = "";
-  $("#node-count").textContent = `${componentModel(model).nodes.filter(n=>n.status!=="removed").length} components at this commit`;
+  $("#node-count").textContent = `${visibleComponents().nodes.filter(n=>n.status!=="removed").length} components at this commit`;
   const h = $(".map-header h1");
   h.textContent = historyScope?.name || "All workflows";
   h.title = h.textContent;
@@ -468,12 +474,22 @@ function bindHistory() {
     modal('<h2>Import real Git history</h2><p class="modal-intro">From your local Show Me How It Works checkout, run the history exporter with your repository and an output filename. See the README for the command.</p><p>Then import the resulting .history.json here. The exporter reads the current branch’s first-parent history without changing your checkout. It includes graph summaries and commit subjects, not raw source bodies.</p><p>Export again to include newer commits. Maximum import: 80 MB / 5,000 commits.</p>');
   });
   $("#history-input").onchange=async e=>{
-    const file=e.target.files[0];if(!file)return;
+    const file=e.target.files[0];if(!file)return;e.target.value='';
     try {
       if(file.size>80*1024*1024)throw new Error("History file is too large (80 MB maximum).");
       const next=validateHistory(JSON.parse(await file.text()));
       if(!historyOpen) return;
+      const selectedVersion=selectedHistoryEntry()?.versions[historyPlayer?.index];
+      const refresh=historyCommitSelected?historyRefresh(historyData,next,historyData?.commits[historyPlayer?.index]?.sha,selectedVersion?.id):null;
       historyPlayer?.pause();
+      if(refresh){
+        historyData=next;prepareHistory();
+        historySelection=historyWorkflows.find(entry=>entry.versions[refresh.index]?.id===refresh.workflowId)?.id||null;
+        historyLayoutModel=workflowHistoryUnion(historyData,selectedHistoryEntry());
+        historyPlayer.select(refresh.index);freezeHistoryMotion();
+        toast(refresh.added?`Loaded ${refresh.added} new commit${refresh.added===1?'':'s'}. Your review position is unchanged.`:'History is up to date. Your review position is unchanged.');
+        return;
+      }
       model=liveModel || model;
       if(workflowViewBeforeHistory)({selectedWorkflow,selectedNode,selectedFn,selectedEdge,boundaryScope,mode,search,changesOnly,zoom,fittedZoom,relativeZoom,pan}=workflowViewBeforeHistory);
       historyCommitSelected=false;historyBounds=[];historyPaused=false;
@@ -486,7 +502,7 @@ function header() {
 }
 function sidebar() {
   if(historyCommitSelected)return historySidebar();
-  return `<aside class="sidebar" ${workflowsVisible?'':'hidden'}><div class="window-heading"><h2>Workflows</h2><button class="icon-button hide-workflows" aria-label="Hide workflows">${icon('x')}</button></div><button class="map-link ${!selectedWorkflow?'active':''}" id="all-map">${icon('network')}All workflows</button><div class="workflow-list">${model.workflows.map(w=>`<button class="workflow-item ${w.id===selectedWorkflow?'selected':''}" data-workflow="${esc(w.id)}" title="${esc(w.name)}"><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${w.nodes.length} components</small></span></button>`).join('')||'<p class="sidebar-note">No workflows found.</p>'}</div></aside>`;
+  return `<aside class="sidebar" ${workflowsVisible?'':'hidden'}><div class="window-heading"><h2>Workflows</h2><button class="icon-button hide-workflows" aria-label="Hide workflows">${icon('x')}</button></div><button class="map-link ${!selectedWorkflow?'active':''}" id="all-map">${icon('network')}All workflows</button><div class="workflow-list">${model.workflows.map(w=>`<button class="workflow-item ${w.id===selectedWorkflow?'selected':''}" data-workflow="${esc(w.id)}" title="${esc(w.name)}"><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${esc(w.trigger?.label || `${w.nodes.length} components`)}${w.uncertain?' · uncertain':''}</small></span></button>`).join('')||'<p class="sidebar-note">No workflows found.</p>'}</div></aside>`;
 }
 function bindBoardWindows() {
   bindFloatingPanel($('.sidebar'),'workflows',$('.sidebar .window-heading'));
@@ -507,13 +523,13 @@ function bindBoard() {
   $('#hide-timeline')?.addEventListener('click',exitHistory);
 }
 function render() {
-  if (selectedEdge && !edgeDetails(model, mode, ...selectedEdge))
+  if (selectedEdge && !edgeDetails(visibleSourceModel(), mode, ...selectedEdge))
     selectedEdge = null;
   const workflow = activeWorkflow();
-  const view=componentModel(model);
+  const view=visibleComponents();
   $("#app").innerHTML =
-    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${view.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${view.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
-  if(!historyCommitSelected && model.kind!=='demo'){
+    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Possible workflow calls" : "All core components"}<span class="context-divider"></span><span id="node-count">${view.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${view.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
+  if(!historyOpen && model.kind!=='demo'){
     $('.canvas-toolbar').insertAdjacentHTML('afterend','<div class="explanation-progress" id="explanation-progress"></div>');
     const summaryLabel=`Read ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'} explanation`;
     $('.map-tools').insertAdjacentHTML('afterbegin',`<button class="icon-button" id="open-project-summary" aria-label="${summaryLabel}" title="${summaryLabel}">${icon('book-open')}</button>`);
@@ -528,8 +544,8 @@ function render() {
     $('#analysis-coverage').onclick=()=>showCoverage();
   }
   if(model.analysisWarnings?.length){
-    $('.map-tools').insertAdjacentHTML('afterbegin','<button class="filter-button" id="project-settings-warning">Check project settings</button>');
-    $('#project-settings-warning').onclick=()=>modal(`<h2>Some project settings could not be applied</h2><p>Dependency paths may be incomplete. Check the imported compiler settings and include any local configuration they extend.</p><ul>${model.analysisWarnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`);
+    $('.map-tools').insertAdjacentHTML('afterbegin','<button class="filter-button" id="project-settings-warning">Review analysis notes</button>');
+    $('#project-settings-warning').onclick=()=>modal(`<h2>Some analysis is incomplete</h2><p>Check the reported compiler settings or entry-point registrations. Unresolved behavior has not been assumed.</p><ul>${model.analysisWarnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`);
   }
   $(".canvas-context").firstElementChild.classList.remove("on");
   $(".canvas-context").childNodes[1].textContent = "";
@@ -548,14 +564,14 @@ const layoutPositions = new Map();
 let componentBoundaries = [],
   hiddenContextCount = 0;
 function graphItems() {
-  const view=componentModel(model);
+  const view=visibleComponents();
   const graph =
     mode === "overview"
       ? systemGraph(view)
       : {
           items:
             mode === "functions" ? functionItems(view, layers) : view.nodes,
-          edges: mode === "functions" ? model.functionEdges || [] : view.edges,
+          edges: mode === "functions" ? view.functionEdges || [] : view.edges,
         };
   const focused = focusGraph(graph, activeWorkflow() || (boundaryScope ? { nodes: boundaryScope.members } : null));
   hiddenContextCount = focused.hidden;
@@ -599,7 +615,7 @@ function graphItems() {
 }
 let historyBounds = [];
 function drawGraph() {
-  const view=componentModel(model);
+  const view=visibleComponents();
   const items = graphItems(),
     positions = new Map(items.map((n) => [n.id, n]));
   const entityLabel =
@@ -616,7 +632,7 @@ function drawGraph() {
     mode === "overview" ? "Find an area" : mode === "functions" ? "Find a function" : "Find a component",
   );
   $("#empty-search").textContent = `No matching ${entityLabel}`;
-  let edges = mode === "functions" ? model.functionEdges || [] : view.edges;
+  let edges = mode === "functions" ? view.functionEdges || [] : view.edges;
   if (mode === "overview") edges = systemGraph(view).edges;
   const wf = activeWorkflow();
   const related = (n) =>
@@ -855,11 +871,11 @@ function list(title, items) {
 }
 function renderInspector() {
   if (selectedEdge) {
-    const detail = edgeDetails(model, mode, ...selectedEdge);
+    const detail = edgeDetails(visibleSourceModel(), mode, ...selectedEdge);
     if (detail) return renderEdgeInspector(detail);
     selectedEdge = null;
   }
-  const view=componentModel(model);
+  const view=visibleComponents();
   const panel = $("#inspector"),
     n = view.nodes.find((n) => n.id === selectedNode);
   if (!n) {
@@ -870,7 +886,7 @@ function renderInspector() {
   const fn = selectedFn !== null ? n.functionDetails?.[selectedFn] : null,
     detail = fn || n,
     title = selectedFn !== null ? n.functions[selectedFn] : n.title;
-  const ai = aiCache.get(`${n.id}:${selectedFn}`);
+  const ai = aiCache.get(aiAnswerKey(n,fn));
   panel.innerHTML = `<div class="inspector-header"><span class="eyebrow">${selectedFn !== null ? "FUNCTION BEHAVIOR" : "COMPONENT DETAILS"}</span><button class="icon-button" id="close-inspector" aria-label="Close details">${icon("x")}</button></div><div class="inspector-body"><span class="detail-icon ${n.layer}">${icon(selectedFn !== null ? "braces" : n.icon)}</span><h2>${esc(title)}</h2><span class="detail-type">${selectedFn !== null ? "Function" : n.isComponent ? "Component" : layerNames[n.layer]}<span>·</span>${esc(n.evidence)}</span>${historyCommitSelected && historySelection ? `<p class="evidence-note">${n.impact==="possible" ? "May affect this workflow: the changed component is a dependency, but changed behavior is not confirmed on its mapped call paths." : "Scoped to this workflow’s mapped structure. Not verified runtime behavior."}</p>` : ""}<p class="detail-summary">${esc(fn ? fn.summary : selectedFn !== null ? `Part of ${n.title.toLowerCase()}. The sample below describes the containing component; import a project for function-specific details.` : n.summary)}</p>${n.change ? `<div class="change-detail">${icon("git-compare-arrows")}<div><strong>What changed</strong><p>${esc(n.change)}</p></div></div>` : ""}<div class="behavior-card">${behaviorCard(detail, model.kind === "demo").map(([label, values]) => list(label, values.map(plainBehavior))).join("")}</div><p class="evidence-note">${model.kind === "demo" ? "Curated example behavior." : "Structure parsed; intent and side effects inferred."} Not runtime verified.</p>${selectedFn === null ? `<section class="detail-section"><h3>FUNCTIONS <span>${n.functions.length}</span></h3><div class="detail-functions">${n.functions.map((f, i) => `<button class="detail-function" data-inspect-function="${i}">${icon("braces")}${esc(f)}${icon("chevron-right")}</button>`).join("")}</div></section>` : `<button class="back-component" id="back-component">${icon("arrow-left")} Back to component</button>`}<section class="detail-section"><h3>${selectedFn !== null ? "COMPONENT DEPENDENCIES" : "CONNECTED TO"}</h3>${
     view.edges
       .filter((e) => e[0] === n.id)
@@ -882,8 +898,8 @@ function renderInspector() {
       )
       .join("") || '<p class="muted">No outgoing dependencies mapped.</p>'
   }</section><div class="ai-section"><div>${icon("sparkles")}<strong>Ask about this ${selectedFn !== null ? "function" : "component"}</strong></div><p>Get a focused explanation of its behavior.</p><form id="ask-form"><input id="ask-input" aria-label="Ask about the selected component" placeholder="What happens if this fails?"/><button aria-label="Ask AI" title="Ask AI">${icon("arrow-up")}</button></form><small>${aiConfig.configured ? "DeepSeek configured · selected code sent on request" : "DeepSeek uses server configuration · check AI status in settings"}</small><div id="ai-answer" class="ai-answer" ${ai ? "" : "hidden"}>${ai ? answerMarkup(ai) : ""}</div></div></div>`;
-  const id=fn?.id||n.id,hasGenerated=!historyCommitSelected&&model.kind!=='demo';
-  const structural={purpose:plainBehavior(detail.summary||n.summary),uncertainty:model.kind==='demo'?'Curated sample behavior; not extracted from a repository.':'Static structure only; dynamic behavior may be missing.'};
+  const id=fn?.id||workflowCardId(n.id,activeWorkflow()),hasGenerated=!historyCommitSelected&&model.kind!=='demo';
+  const structural={purpose:plainBehavior(detail.summary||n.summary),uncertainty:model.kind==='demo'?'Curated sample behavior; not extracted from a repository.':detail.limitations?.length?detail.limitations.join(' '):'Static analysis; runtime behavior is not verified.'};
   behaviorCard(detail,model.kind==='demo').forEach(([,values],i)=>structural[CARD_FIELDS[i+1]]=values.map(plainBehavior).join(' · '));
   const summary=panel.querySelector('.detail-summary');
   if(model.coverage){
@@ -967,7 +983,7 @@ function renderEdgeInspector(detail) {
     detail.calls.map(
       ({ caller, callee }) => `${caller.title} → ${callee.title}`,
     ),
-  )}${list("INFORMATION EXPECTED", detail.inputs.length ? detail.inputs.map(plainBehavior) : ["Not established"])}${list("RESULT EXPECTED", detail.outputs.length ? detail.outputs.map(plainBehavior) : ["Not established"])}${list("WHAT MAY CHANGE", detail.effects.length ? detail.effects.map(plainBehavior) : ["No effects mapped"])}${list("IF THE CALL FAILS", detail.failures.map(plainBehavior))}<p class="evidence-note">Inputs describe the destination contract, not verified argument values. Caller recovery and execution order are not established unless explicitly noted in the sample.</p><section class="detail-section"><h3>EXPLORE ENDPOINTS</h3>${[detail.from, detail.to].map((n, i) => `<button class="related-node" data-endpoint="${i}">${icon("box")}${esc(n.title)}${icon("arrow-up-right")}</button>`).join("")}</section></div>`;
+  )}${detail.conditions?.length?list("CALL CONDITIONS",detail.conditions.map(plainBehavior)):''}${list("INFORMATION EXPECTED", detail.inputs.length ? detail.inputs.map(plainBehavior) : ["Not established"])}${list("RESULT EXPECTED", detail.outputs.length ? detail.outputs.map(plainBehavior) : ["Not established"])}${list("WHAT MAY CHANGE", detail.effects.length ? detail.effects.map(plainBehavior) : ["No effects mapped"])}${list("IF THE CALL FAILS", detail.failures.map(plainBehavior))}<p class="evidence-note">Inputs describe the destination contract, not verified argument values. Conditions and recovery describe the mapped source path. Actual execution and dynamic dispatch are not verified.</p><section class="detail-section"><h3>EXPLORE ENDPOINTS</h3>${[detail.from, detail.to].map((n, i) => `<button class="related-node" data-endpoint="${i}">${icon("box")}${esc(n.title)}${icon("arrow-up-right")}</button>`).join("")}</section></div>`;
   $("#close-edge").onclick = () => {
     selectedEdge = null;
     panel.classList.remove("open");
@@ -991,14 +1007,14 @@ async function askAI(question, n, fn) {
   if (!question.trim()) return;
   if (!await checkAI()) {showSettings();return;}
   const answer = $("#ai-answer"),
-    cacheKey = `${n.id}:${selectedFn}`;
+    cacheKey = aiAnswerKey(n,fn);
   answer.hidden = false;
   answer.textContent = "Reading the selected behavior…";
   const button = $("#ask-form button");
   button.disabled = true;
   try {
     const context = jobContext(model,{id:fn?.id||n.id,title:fn?.title||n.title,
-      kind:fn?'function':'component',members:fn?[fn.sourceModule||fn.parent||n.id]:n.isComponent?n.members:[n.id],fn}).context;
+      kind:fn?'function':'component',members:fn?[fn.sourceModule||fn.parent||n.id]:n.isComponent?n.members:[n.id],selectedFunctionIds:fn?undefined:activeWorkflow()?.functionIds,workflowId:fn?undefined:activeWorkflow()?.id,fn}).context;
     if(!context.source.length){const detail=fn||n;context.staticBehavior={evidence:model.kind==='demo'?'Curated sample, not extracted source':'Historical structural labels only',summary:detail.summary,inputs:detail.inputs,outputs:detail.outputs,decisions:detail.decisions,effects:detail.effects};}
     const r = await fetch(
       '/api/ai/chat',

@@ -129,7 +129,7 @@ test('workflow focus, overview, and function animation use source membership beh
 
 test('AI component cards cover folded sources and do not create separate supporting-file jobs',()=>{
   const raw=analyzeFiles(files),view=componentModel(raw),jobs=explanationJobs(raw,systemGraph(view).items);
-  const components=jobs.filter(j=>j.kind==='component');
+  const components=jobs.filter(j=>j.kind==='component'&&!j.workflowId);
   assert.equal(components.length,3);
   assert.ok(!components.some(j=>j.id==='src/booking/types.ts'));
   const booking=components.find(j=>j.title==='Booking'),context=jobContext(raw,booking).context;

@@ -1,7 +1,8 @@
 import { historyDelta, historyUnion } from './history.js';
+import { scopeWorkflowModel } from './workflows.js';
 
 const entryId = w => w.entryId || w.nodes[0];
-const entrySignature = (m,w) => m.nodes.find(n=>n.id===entryId(w))?.fingerprint;
+const entrySignature = (m,w) => w.entryFunctionId?m.nodes.flatMap(n=>n.functionDetails).find(f=>f.id===w.entryFunctionId)?.fingerprint:m.nodes.find(n=>n.id===entryId(w))?.fingerprint;
 
 // Exact IDs survive renames. A moved entry is matched only when its fingerprint
 // is unique in both adjacent snapshots. Similar names/members are hints, not identity.
@@ -35,22 +36,7 @@ export function workflowCatalog(history) {
   return entries;
 }
 
-function scopedModel(model, workflow) {
-  if(!workflow) return {...model,nodes:[],edges:[],functionEdges:[],workflows:[]};
-  const ids=new Set(workflow.nodes), nodes=model.nodes.filter(n=>ids.has(n.id));
-  const reachable=new Set(nodes.filter(n=>n.id===entryId(workflow)).flatMap(n=>n.functionDetails.map(f=>f.id)));
-  const queue=[...reachable], functions=new Set(nodes.flatMap(n=>n.functionDetails.map(f=>f.id)));
-  for(let i=0;i<queue.length;i++) for(const [a,b] of model.functionEdges || [])
-    if(a===queue[i] && functions.has(b) && !reachable.has(b)){reachable.add(b);queue.push(b);}
-  const filtered=nodes.map(n=>{
-    const reached=n.functionDetails.filter(f=>reachable.has(f.id));
-    const functionDetails=reached.length ? reached : n.functionDetails;
-    return {...n,functionDetails,functionEvidence:reached.length ? 'resolved' : 'import-only',functions:functionDetails.map(f=>f.title)};
-  });
-  const fids=new Set(filtered.flatMap(n=>n.functionDetails.map(f=>f.id)));
-  return {...model,nodes:filtered,edges:model.edges.filter(([a,b])=>ids.has(a)&&ids.has(b)),
-    functionEdges:(model.functionEdges||[]).filter(([a,b])=>fids.has(a)&&fids.has(b)),workflows:[workflow]};
-}
+const scopedModel=scopeWorkflowModel;
 
 export function workflowCommit(history, index, entry=null) {
   const after=history.commits[index].model, before=history.commits[index-1]?.model;

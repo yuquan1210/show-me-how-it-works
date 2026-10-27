@@ -36,7 +36,7 @@ export function coverageMarkup(model, {moduleId = '', functionId = '', component
     <p>${rows.length} ${esc(categories[category].toLowerCase())}. Module-loading expressions are counted under dependencies.</p>
     <ul class="coverage-records">${shown.map(row => `<li><strong>${esc(category === 'dependencies' ? row.specifier ?? 'Computed module location' : row.label)}</strong><small>${esc(row.module)}:${row.line}:${row.column}${category === 'dependencies' ? ` · ${esc(row.kind)}${row.typeOnly ? ' · types only' : ''} · ${esc(row.status)}` : ''}</small><p>${esc(row.reason)}</p>${row.to && category !== 'callbacks' ? `<small>Target: ${esc(functions.get(row.to) || row.to)}</small>` : ''}</li>`).join('') || '<li>No records in this category. This does not prove that all behavior is covered.</li>'}</ul>
     <div class="coverage-pagination"><button id="coverage-prev" ${page === 0 ? 'disabled' : ''}>Previous</button><span>Page ${page + 1} of ${totalPages}</span><button id="coverage-next" ${page + 1 >= totalPages ? 'disabled' : ''}>Next</button></div>
-    ${model.analysisWarnings?.length ? `<h3>Project settings</h3><ul>${model.analysisWarnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+    ${model.analysisWarnings?.length ? `<h3>Analysis notes</h3><ul>${model.analysisWarnings.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
     <details><summary>What this analysis does not cover</summary><ul>${COVERAGE_LIMITS.map(limit => `<li>${esc(limit)}</li>`).join('')}</ul></details></div>`;
   return {markup, page};
 }

@@ -1,5 +1,6 @@
 import { plainBehavior } from './behavior.js';
 import { componentModel } from './components.js';
+import { scopeWorkflowModel } from './workflows.js';
 
 export const CARD_FIELDS = ['purpose', 'receives', 'checks', 'changes', 'returns', 'failure', 'uncertainty'];
 export const CARD_LABELS = ['Purpose', 'Receives', 'Checks & branches', 'Changes', 'Returns', 'If it fails', 'Uncertainty'];
@@ -32,18 +33,29 @@ export async function digest(value) {
 }
 export function explanationJobs(model, areas = []) {
   const jobs = [{id:'overview',title:model.name,kind:'application overview',members:model.nodes.map(n=>n.id)}];
-  for(const w of model.workflows) jobs.push({id:`workflow:${w.id}`,title:w.name,kind:'workflow',members:w.nodes});
+  for(const w of model.workflows) jobs.push({id:`workflow:${w.id}`,title:w.name,kind:'workflow',members:w.nodes,selectedFunctionIds:w.functionIds,entryFunctions:w.entryFunctions,trigger:w.trigger,workflowId:w.id});
   for(const a of areas) jobs.push({id:`area:${a.id}`,title:a.title,kind:'application area',members:a.members});
   for(const n of componentModel(model).nodes) jobs.push({id:n.id,title:n.title,kind:'component',members:n.isComponent?n.members:[n.id]});
+  for(const workflow of model.workflows.filter(w=>Array.isArray(w.functionIds))){
+    const scoped=scopeWorkflowModel(model,workflow);
+    for(const n of componentModel(scoped).nodes)jobs.push({id:workflowCardId(n.id,workflow),title:n.title,kind:'component',members:n.isComponent?n.members:[n.id],selectedFunctionIds:workflow.functionIds,workflowId:workflow.id,workflowTitle:workflow.name});
+    for(const area of areas){
+      const members=area.members.filter(id=>workflow.nodes.includes(id));
+      if(members.length)jobs.push({id:workflowCardId(`area:${area.id}`,workflow),title:area.title,kind:'application area',members,selectedFunctionIds:workflow.functionIds,entryFunctions:workflow.entryFunctions,workflowId:workflow.id,workflowTitle:workflow.name});
+    }
+  }
   for(const n of model.nodes) {
     for(const f of n.functionDetails) jobs.push({id:f.id,title:f.title,kind:'function',members:[n.id],fn:f});
   }
   return jobs;
 }
+export const workflowCardId=(id,workflow)=>workflow&&Array.isArray(workflow.functionIds)?`${id}@workflow:${workflow.id}`:id;
 export function jobContext(model, job) {
+  const workflow=job.workflowId&&model.workflows.find(w=>w.id===job.workflowId);
+  if(workflow&&Array.isArray(workflow.functionIds))model=scopeWorkflowModel(model,workflow);
   const compare=(a,b)=>a<b?-1:a>b?1:0;
   const selectedIds=new Set(job.members);
-  const selectedFunctions=(job.fn ? [job.fn] : model.nodes.filter(n=>selectedIds.has(n.id)).flatMap(n=>n.functionDetails)).sort((a,b)=>compare(a.id,b.id));
+  const selectedFunctions=(job.fn ? [job.fn] : model.nodes.filter(n=>selectedIds.has(n.id)).flatMap(n=>n.functionDetails).filter(f=>!job.selectedFunctionIds||job.selectedFunctionIds.includes(f.id))).sort((a,b)=>compare(a.id,b.id));
   const functionIds=new Set(selectedFunctions.map(f=>f.id)),queue=[...functionIds];
   const supportingRelations=[...(model.functionEdges||[]),...(model.coverage?.callbackReferences||[]).filter(r=>r.to).map(r=>[r.from,r.to])];
   for(let i=0;i<queue.length;i++)for(const [from,to] of supportingRelations)
@@ -64,6 +76,8 @@ export function jobContext(model, job) {
     connections:edges(model.edges.filter(([a,b])=>ids.has(a)&&ids.has(b))),
     functionCalls:edges((model.functionEdges||[]).filter(([a])=>functionIds.has(a))),
     source:[], environment:[], selectedFacts:[], essentialValues:[], incomplete:false, omitted:[]};
+
+  if(job.workflowTitle)context.workflowScope=job.workflowTitle;
   const addSource=(id,raw,role,target,limit=16000)=>{
     const source=(raw||'').slice(0,Math.min(remaining,limit));remaining-=source.length;
     if(source.length<(raw||'').length){context.incomplete=true;context.omitted.push(id);}
@@ -76,8 +90,10 @@ export function jobContext(model, job) {
     context.selectedOperations=selectedFunctions.map(f=>({id:f.id,title:f.title}));
     context.requiredCoverage=`This ${job.kind} includes all listed selectedOperations. Cover their distinct major paths; do not copy the card of just the first function. Supporting callees are not additional selected operations.`;
     if(job.kind!=='component'){
-      const roots=new Set(model.workflows.map(w=>w.id));
-      context.entryOperations=selectedFunctions.filter(f=>roots.has(f.parent)).map(f=>({id:f.id,title:f.title}));
+      const roots=new Set(model.workflows.flatMap(w=>w.entryFunctions||[]));
+      const legacyRoots=new Set(model.workflows.filter(w=>!Array.isArray(w.functionIds)).map(w=>w.entryId||w.nodes[0]));
+      context.entryOperations=selectedFunctions.filter(f=>job.entryFunctions?job.entryFunctions.includes(f.id):roots.has(f.id)||legacyRoots.has(f.parent)).map(f=>({id:f.id,title:f.title}));
+      if(job.trigger)context.trigger=job.trigger;
       context.abstractionGoal=job.kind==='application area'
         ? 'Summarize this area’s responsibilities and major paths. Group helper operations; do not enumerate every function or its return type.'
         : 'Describe the end-to-end caller journeys rooted at entryOperations. Helper APIs and the demo runner are supporting implementation, not separate user-facing workflows. Group internal checks and outputs; do not enumerate every function.';
@@ -115,7 +131,11 @@ export function jobContext(model, job) {
       addSource(f.id,f.raw,'supporting dependency',context.source,8000);
   context.parseErrors=(model.errors||[]).filter(id=>evidenceIds.has(id));
   if(context.parseErrors.length)context.incomplete=true;
-  const relevantCalls=(model.coverage?.calls||[]).filter(c=>job.fn?functionIds.has(c.from):ids.has(c.module));
+  const paths=selectedFunctions.filter(f=>f.behavior).map(f=>({id:f.id,...f.behavior}));
+  const pathText=JSON.stringify(paths);
+  if(pathText.length<=Math.min(remaining,8000)){context.executionPaths=paths;remaining-=pathText.length;}
+  else{context.incomplete=true;context.omitted.push('Some static execution paths');}
+  const relevantCalls=(model.coverage?.calls||[]).filter(c=>job.fn||job.selectedFunctionIds?functionIds.has(c.from)||c.from===c.module&&ids.has(c.module):ids.has(c.module));
   const relevantDependencies=(model.coverage?.dependencies||[]).filter(d=>evidenceIds.has(d.module));
   const callbackReferences=(model.coverage?.callbackReferences||[]).filter(r=>relevantCalls.some(c=>c.id===r.call));
   const coverageEvidence={calls:relevantCalls,dependencies:relevantDependencies,callbackReferences};
@@ -124,7 +144,7 @@ export function jobContext(model, job) {
   else {context.incomplete=true;context.omitted.push('Some analysis coverage records');context.analysisCoverage={unresolvedCalls:relevantCalls.filter(c=>c.status!=='resolved').slice(0,10).map(c=>({label:c.label,status:c.status,reason:c.reason})),incomplete:true};}
   context.hasUnresolvedBehavior=relevantCalls.some(c=>c.status==='unresolved')||relevantDependencies.some(d=>d.status==='unresolved')||callbackReferences.some(r=>!r.to);
   // Hash complete dependency context, not only the bounded text sent to AI.
-  const revision=JSON.stringify([VERSION,job.id,context,nodes.map(n=>[n.id,n.fingerprint]),relevantEvidence,coverageEvidence]);
+  const revision=JSON.stringify([VERSION,job.id,context,nodes.map(n=>[n.id,n.fingerprint]),relevantEvidence.map(file=>({...file,functions:file.functions?.filter(f=>functionIds.has(f.id)),callResults:file.callResults?.filter(call=>functionIds.has(call.from)||functionIds.has(call.to))})),coverageEvidence]);
   return {context,revision};
 }
 export async function requestExplanation(config, context, signal, fetcher = fetch, onStage=()=>{}) {

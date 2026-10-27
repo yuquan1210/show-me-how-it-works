@@ -1,4 +1,5 @@
 // Keep dependency evidence separate from inferred business intent.
+import {callPaths} from './call-paths.js';
 import { componentModel } from './components.js';
 export function edgeDetails(model, level, fromId, toId) {
   if (level === "overview") return null;
@@ -29,7 +30,7 @@ export function edgeDetails(model, level, fromId, toId) {
       level === "functions"
         ? a === fromId && b === toId
         : caller.parentId === fromId && callee.parentId === toId;
-    return matches ? [{ caller, callee }] : [];
+    return matches ? [{ caller, callee,paths:callPaths(caller,callee.id) }] : [];
   });
   const curated = model.kind === "demo";
   const dependencyRecords = (model.coverage?.dependencies || []).filter(d => d.module === fromId && d.to === toId);
@@ -63,8 +64,9 @@ export function edgeDetails(model, level, fromId, toId) {
     inputs: [...new Set(callees.flatMap((fn) => fn.inputs || []))],
     outputs: [...new Set(callees.flatMap((fn) => fn.outputs || []))],
     effects: [...new Set(callees.flatMap((fn) => fn.effects || []))],
+    conditions:[...new Set(calls.flatMap(call=>call.paths.map(path=>`${call.caller.title}: ${path.when}${path.awaited?' The caller awaits completion.':''}`)))],
     failures: curated && fromId === "orders" && toId === "inventory"
       ? ["Insufficient stock stops checkout. Reservations are released if checkout fails."]
-      : ["Caller recovery is not established. A failed call may prevent downstream steps."],
+      : calls.some(call=>call.paths.length)?[...new Set(calls.flatMap(call=>call.paths.flatMap(path=>[path.recovery,...(path.following?[path.following]:[]),...(path.cleanup?[path.cleanup]:[])])))]:["Caller recovery is not established. A failed call may prevent downstream steps."],
   };
 }

@@ -96,7 +96,7 @@ export function collectCallRecords(source, path, checker, declarations, dependen
           : dependency ? dependency.status === 'resolved' ? 'Imported module is known, but this operation has no resolved implementation.' : dependency.reason
             : runtime ? 'Runtime-provided operation; implementation is outside the imported snapshot.'
               : ts.isNewExpression(node) ? 'No unique explicit constructor implementation was resolved.' : 'No unique implementation was resolved; dispatch or supplied callbacks may be dynamic.';
-      const call = {id: `${path}:call:${node.getStart(source)}`, module: path, from: owner,
+      const call = {id: `${path}:call:${node.getStart(source)}:${node.end}`, module: path, from: owner,
         kind: ts.isNewExpression(node) ? 'construct' : 'call', label, ...sourceLocation(source, node), status, reason,
         ...(to ? {to} : {}), ...(dependency ? {dependency: dependency.id} : {})};
       calls.push(call);

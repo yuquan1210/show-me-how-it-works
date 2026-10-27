@@ -6,8 +6,8 @@ export function behaviorCard(detail, curated = false) {
     ["Checks & branches", decisions.length ? decisions : ["No explicit branches mapped"]],
     ["Changes", detail.effects?.length ? detail.effects : ["No side effects mapped. This is not a guarantee of purity."]],
     ["Returns", detail.outputs?.length ? detail.outputs : ["No explicit return mapped"]],
-    ["If it fails", decisions.filter(s => failurePattern.test(s)).length
-      ? decisions.filter(s => failurePattern.test(s))
+    ["If it fails", (detail.failures || decisions.filter(s => failurePattern.test(s))).length
+      ? (detail.failures || decisions.filter(s => failurePattern.test(s)))
       : ["Failure handling is not established"]],
   ];
 }
