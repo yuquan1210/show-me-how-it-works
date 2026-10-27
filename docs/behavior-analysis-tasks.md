@@ -1,8 +1,8 @@
 # Behavior analysis implementation and review
 
-Complete one task at a time. After implementation and verification, stop for the user's manual review. Start the next task only after the user approves continuing. Changes requested in review belong to the current task.
+Current authorization: the user asked to continue autonomously during their absence, skipping work that needs a human design decision. This supersedes the earlier pause after each task. Keep the existing UI minimal, improve existing features only, and never push commits.
 
-Additional requested change — AI configuration and generation modes: implemented, awaiting manual review. `ai.config.json` now selects on-demand or full preparation, and owns model, endpoint, thinking/effort, budgets, and timeouts. Credentials use ignored `ai.config.local.json` with existing environment credentials as a fallback. Selective mode is the default and generates only explicitly requested cards; full mode preserves the preparation gate. Verified with 142 automated tests, a successful build, and browser checks for both modes, responsive generation, consent, cache reuse/invalidation, and missing credentials. Provider calls were mocked. See [AI configuration](ai-configuration.md). Task 3 remains pending review.
+AI configuration and selective generation were delivered in the preceding local commits. This pass implements operation discovery and bounded behavior extraction, improves existing detail/connection cards, and verifies the UI. No saved correction editor, scenario selector, additional canvas level, or remote Git connector is introduced.
 
 ## Task 1 — Project-aware import resolution
 
@@ -34,7 +34,7 @@ Limits at task 1 review: only conventionally named compiler configs inside the s
 
 ## Task 2 — Coverage and dependency boundaries
 
-Status: implemented; awaiting manual review.
+Status: implemented before this pass; continuation authorized by the latest instruction.
 
 - Retain important modules with state, initialization, constants, or re-exports even without named functions.
 - Follow barrel/re-export chains consistently in component maps and explanation evidence.
@@ -76,47 +76,55 @@ Remaining limits: counts describe the imported supported source snapshot; exclud
 
 ## Task 3 — Operation-based workflow discovery
 
-Status: pending task 2 review.
+Status: implemented and verified.
 
-- Model a workflow around one entry function and its reachable calls.
-- Separate creation and cancellation operations in the same controller.
-- Preserve shared helpers across workflows; record discovery evidence and uncertainty.
-- Remove the silent 20-root limit and maintain stable workflow identities through history.
-- Update workflow focus and AI context so unrelated sibling operations stay excluded.
+- Workflows start at a public operation and follow resolved calls. Create/cancel in one controller remain separate and retain shared helpers.
+- Public export boundaries and inferred uncalled entry operations carry discovery evidence. Controller helpers and unused implementation imports do not become workflow steps. There is no 20-operation cap.
+- Existing canvas filtering, component details, summary cards, follow-up context, and history use the same selected operations. Scoped AI cards have separate identities so a global component explanation cannot leak into a narrower workflow view.
+- Per-operation canonical fingerprints retain unique moved entries and avoid comment/format-only history noise. A sibling-only change is excluded; changes in shared state remain possible impacts.
+- Nested calls with the same starting position now have distinct coverage IDs.
 
-Acceptance: the reservation example has distinct create/cancel paths; unused imports do not become called workflow steps. Workflow focus and history replay remain consistent.
+## Task 4 — Framework entry points
 
-## Task 4 — Framework entry points and workflow corrections
+Status: automatic discovery implemented; saved manual corrections deferred for design review.
 
-Status: pending task 3 approval.
+- An explicit Express adapter recognizes imports/require, immutable receiver aliases, named/inline handlers, middleware references, imported mounted routers, and route chains.
+- HTTP method/path become workflow names and triggers. A uniquely registered inline callback gets a meaningful handler label.
+- Unknown handlers/paths, computed mounts, duplicate routes and unmounted routers remain unresolved or uncertain. Arbitrary objects with get/post methods do not become HTTP workflows.
+- Registration and passed middleware are not turned into direct invocation edges. Middleware continuation, actual mounting/execution, route matching precedence and error middleware dispatch are not verified.
 
-- Implement one explicit framework adapter first: Express-style HTTP route registration, including named and inline handlers.
-- Distinguish route registration from handler execution.
-- Support user-selected entry functions, workflow names, and grouping corrections with saved project-specific overrides.
-- Keep unknown registration and dispatch patterns explicit.
-
-Acceptance: GET/POST routes become separate workflows with trigger evidence; corrections survive reopening the same project and do not silently apply to unrelated projects.
+Deferred: project-specific entry/name/grouping correction editors and persistence are new features. They need a reviewed design under the latest scope restriction.
 
 ## Task 5 — Execution-path extraction
 
-Status: pending task 4 approval.
+Status: bounded static extraction implemented and verified against executable reservation outcomes.
 
-- Add a behavior model between source extraction and rendering.
-- Represent ordered operations, if/else branches, calls, early returns, throws, and try/catch/finally.
-- Preserve await boundaries and mark unsupported loops, concurrency, and dynamic behavior explicitly before extending them.
-- Record evidence locations and separate direct facts from inferred effects.
-- Cover reservation success, duplicate requests, charge failure cleanup, and cancellation ordering with executable examples.
+- A source-ordered tree retains branches, local value transformations, calls, await flags, early returns, explicit throws, and try/catch/finally regions with source positions.
+- Existing structural cards now retain arithmetic, exact comparisons, early outcomes and scoped recovery. Pricing includes 2500 per seat, a four-seat threshold, rounded 0.9 multiplication, and the 500 deduction with a final-branch clamp.
+- Connection details distinguish protected charge failures from pricing errors outside the catch, and show refund completion before cancellation release/save. Unawaited promise rejections are not described as caught merely because a call appears inside try.
+- Loops/switches, complex expressions, shortened outlines and scheduling remain explicit limitations. Calls and name-based effects are static inferences, not runtime traces or a complete symbolic execution engine.
+- AI context includes bounded selected execution paths. History validates and retains only the known path schema; source bodies remain excluded.
 
-Acceptance: extracted paths agree with executable fixture outcomes; exceptions and cleanup do not acquire false execution-order guarantees. This is static analysis, not a runtime recording.
+Verification includes executing the TypeScript reservation fixture after transpilation: duplicate requests return before new payment, charge failure restores capacity, pricing failure occurs before reservation, failed refund leaves capacity held and status confirmed, and coupon/rounding results agree with the extracted branches.
 
-## Task 6 — Behavioral-flow exploration and verification
+## Task 6 — Existing behavioral-flow exploration
 
-Status: pending task 5 approval.
+Status: improvements within existing UI implemented; new scenario controls deferred.
 
-- Render branches, outcomes, and failure paths with expandable calls.
-- Allow users to inspect one possible scenario without hiding alternative paths.
-- Make flow animation follow the selected path and retain clear static-analysis labels.
-- Generate AI descriptions from extracted paths and evidence.
-- Validate with the reservation example and an Express fixture, including browser interaction checks.
+- Existing function/component structural fields and connection inspectors explain important conditions and recovery without another canvas mode or panel.
+- Workflow selection removes sibling operations from functions, grouped components and explanations. History applies the same scope.
+- Existing animation illustrates possible call topology, not a selected execution scenario. History continues to suspend live workflow animation.
+- Fixed explanation progress covering commit buttons when history opened.
+- Re-importing an append-only history keeps the selected commit and workflow, pauses playback, and reports newly available commits. Different branches or rewritten histories start a fresh review. The same file can be imported again.
 
-Acceptance: users can distinguish success, duplicate-return, charge-failure cleanup, and cancellation paths. Unsupported behavior remains visible, and dependency edges cannot be mistaken for observed execution.
+Deferred: interactive scenario selection, branch-path playback and expandable execution-path graphs would add product features. They are not implemented in this pass.
+
+## Verification and remaining review
+
+Final results: all 173 automated tests pass, the production build passes with the existing large analyzer chunk warning, and both installed-Chrome browser suites pass. Provider calls were mocked or blocked; live provider quality was not evaluated.
+
+Run `npm test`, `npm run build`, `npm run test:workflow-ui -- http://127.0.0.1:5197/`, and `npm run test:ai-ui -- http://127.0.0.1:5197/` against a running local server. Browser tests use installed Chrome and mock/block every AI provider request.
+
+Browser coverage: create/cancel isolation; pricing thresholds and early returns; charge/pricing connection recovery; keyboard connection selection; grouped component scope; a 1024px viewport; workflow history and repeated refreshed import; Express GET/POST isolation; coverage reports; selective generation responsiveness and cache invalidation; full preparation blocking and missing credentials. Screenshots are generated in ignored `test-results/`.
+
+Human review remains useful for inferred responsibility naming, which frameworks should be supported next, and whether saved corrections or scenario exploration justify more UI. See [Git-history import proposal](git-history-import.md) for the requested repository URL and refresh assessment. No remote fetch, pull, clone or push was performed.

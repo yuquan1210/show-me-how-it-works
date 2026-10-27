@@ -55,9 +55,13 @@ For a real JavaScript/TypeScript repository, run this from the local app checkou
 node scripts/export-history.mjs /absolute/path/to/repo /absolute/path/to/project.history.json
 ```
 
-Then choose **Import Git history** and select that file. The exporter reads **HEAD’s first-parent chain, oldest to newest**, without checking out commits or changing the repository. Merge commits are compared with their first parent; side branches are not replayed independently. Export again to include newer commits. Uncommitted changes are not included. Existing output files are never overwritten.
+Then choose **Import Git history** and select that file. The exporter reads **HEAD’s first-parent chain, oldest to newest**, without checking out commits or changing the repository. Merge commits are compared with their first parent; side branches are not replayed independently. Export again to include newer commits. Re-importing an append-only export preserves the commit and workflow being reviewed and reports new commits. Uncommitted changes are not included. Existing output files are never overwritten.
 
 Exports contain graph summaries, paths, commit subjects, dates, and SHA-256 fingerprints—not source bodies. They may still contain private project information; keep them private. Import stays in browser memory. Limits: 5,000 commits / 80 MB. Unsupported files, tests, config and files larger than 600 KB are excluded. Parsing limitations still apply; this is structural evolution, not verified runtime behavior.
+
+Imported workflows start at individual public operations and follow resolved calls. Creation and cancellation in the same controller stay separate. Express registrations provide method/path triggers for recognized named and inline handlers; unknown paths and dispatch remain explicit. Grouped cards and history use the selected operation scope, keeping unrelated sibling changes out of that workflow.
+
+Structural details retain bounded source paths: important value transformations, branches, early returns, await boundaries and local exception handling. Connection details distinguish recovery around a particular call from catches elsewhere. This is a static outline, not recorded execution; loops, scheduling and unsupported syntax remain gaps. Existing animation illustrates possible connections. See the [Git-history import and refresh proposal](docs/git-history-import.md) for future connection design.
 
 ## DeepSeek explanations
 
