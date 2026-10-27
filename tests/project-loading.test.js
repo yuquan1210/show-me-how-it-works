@@ -6,7 +6,7 @@ import {allExplanationsReady, explanationJobs, jobContext, ExplanationQueue, CAR
 import {sourceSignature,orderedFiles} from '../src/project-revision.js';
 import {systemGraph} from '../src/graph-layout.js';
 import {analyzeFiles} from '../src/analyzer.js';
-test('reordered folder scans preserve all 26 sample explanation contexts and the source signature',async()=>{
+test('reordered folder scans preserve sample explanation contexts and the source signature',async()=>{
   const root=new URL('../examples/ticket-reservations/src/',import.meta.url);
   const files=fs.readdirSync(root).filter(p=>p.endsWith('.ts')).map(path=>({path,text:fs.readFileSync(new URL(path,root),'utf8')}));
   assert.equal(sourceSignature(files),sourceSignature([...files].reverse()));

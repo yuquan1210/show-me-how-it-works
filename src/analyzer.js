@@ -1,9 +1,10 @@
 import ts from "typescript";
 import { edgeKey } from "./graph-activity.js";
-const excluded =
-  /(^|\/)(node_modules|\.git|dist|build|coverage|__tests__|tests?|\.next|vendor)(\/|$)|\.(test|spec|config)\.[cm]?[jt]sx?$|\.d\.ts$/i;
-export const isSource = (path) =>
-  /\.[cm]?[jt]sx?$/.test(path) && !excluded.test(path);
+import { isSource } from './source-files.js';
+import { createProjectProgram } from './project-config.js';
+import { moduleDependencies, collectCallRecords, sourceLocation } from './analysis-coverage.js';
+import { coverageCounts, COVERAGE_LIMITS } from './coverage-summary.js';
+export { isSource } from './source-files.js';
 export const words = (s) =>
   s
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -27,6 +28,9 @@ function actionText(name) {
         : /^(update|set)/i.test(name)
           ? `Updates ${w.replace(/^(Update|Set) /, "").toLowerCase()}.`
           : `Handles ${w.toLowerCase()}.`;
+}
+function declaredName(name) {
+  return name && (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name) || ts.isPrivateIdentifier(name)) ? name.text : null;
 }
 function callLabel(expression) {
   if (ts.isIdentifier(expression)) return words(expression.text).toLowerCase();
@@ -95,54 +99,25 @@ function summarizeReturn(exp) {
   return "Computed result";
 }
 export function analyzeFiles(files, name = "My application") {
-  const sources = new Map(
-    files.filter((f) => isSource(f.path)).map((f) => [f.path, f.text]),
-  );
-  const options = {
-    allowJs: true,
-    noLib: true,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    module: ts.ModuleKind.ESNext,
-  };
-  const host = {
-    getSourceFile: (path) =>
-      sources.has(path)
-        ? ts.createSourceFile(
-            path,
-            sources.get(path),
-            ts.ScriptTarget.Latest,
-            true,
-          )
-        : undefined,
-    getDefaultLibFileName: () => "lib.d.ts",
-    writeFile: () => {},
-    getCurrentDirectory: () => "",
-    getDirectories: () => [],
-    fileExists: (path) => sources.has(path),
-    readFile: (path) => sources.get(path),
-    getCanonicalFileName: (path) => path,
-    useCaseSensitiveFileNames: () => true,
-    getNewLine: () => "\n",
-  };
-  const program = ts.createProgram([...sources.keys()], options, host);
+  const project = createProjectProgram(files);
+  const { program } = project;
   const checker = program.getTypeChecker();
-  const declarations = new Map(),
-    callSites = [];
+  const declarations = new Map();
   const nodes = [],
-    imports = new Map(),
-    functions = [],
     errors = [],
     explanationEvidence = [];
+  const sourceModules = [];
+  const coverage = {version: 1, sourceFiles: 0, mappedModules: 0, emptyFiles: [], dependencies: [], calls: [], callbackReferences: [], limitations: COVERAGE_LIMITS};
   for (const { path, text } of files.filter((f) => isSource(f.path))) {
-    const sf = program.getSourceFile(path);
+    const sf = project.getSourceFile(path);
     if (sf.parseDiagnostics.length) errors.push(path);
     const id = path,
       layer = layerFor(path),
-      fns = [],
-      moduleImports = [];
-    for (const st of sf.statements)
-      if (ts.isImportDeclaration(st) && ts.isStringLiteral(st.moduleSpecifier))
-        moduleImports.push(st.moduleSpecifier.text);
+      fns = [];
+    const dependencies = moduleDependencies(sf, path, checker, project);
+    sourceModules.push({sf, path, ...dependencies});
+    coverage.dependencies.push(...dependencies.records);
+    const moduleImports = [...new Set(dependencies.records.map(d => d.specifier).filter(s => s !== null))];
     // Local AI evidence includes state, constants and types, not just function bodies.
     const moduleDeclarations = sf.statements.flatMap(st => {
       if (ts.isVariableStatement(st)) return st.declarationList.declarations
@@ -152,23 +127,29 @@ export function analyzeFiles(files, name = "My application") {
       return ts.isInterfaceDeclaration(st) || ts.isTypeAliasDeclaration(st) || ts.isEnumDeclaration(st)
         ? [st.getText(sf)] : [];
     });
-    const evidence={id, declarations:moduleDeclarations.join('\n'), imports:moduleImports,functions:[]};
+    const evidence={id, declarations:moduleDeclarations.join('\n'), imports:moduleImports,
+      resolvedImports: [...new Set(dependencies.records.filter(d => d.status === 'resolved').map(d => d.to))], functions:[]};
     explanationEvidence.push(evidence);
     const visit = (n) => {
       if (
         (ts.isFunctionDeclaration(n) ||
           ts.isMethodDeclaration(n) ||
+          ts.isGetAccessor(n) || ts.isSetAccessor(n) ||
+          ts.isConstructorDeclaration(n) ||
           ts.isArrowFunction(n) ||
           ts.isFunctionExpression(n)) &&
         n.body
       ) {
-        const fnName =
-          (n.name && ts.isIdentifier(n.name) ? n.name.text : null) ||
+        const position = sourceLocation(sf, n);
+        const ownerName = (ts.isClassDeclaration(n.parent) || ts.isClassExpression(n.parent)) ? n.parent.name?.text || 'Anonymous class' : null;
+        const anonymousCallback = ts.isCallExpression(n.parent) || ts.isNewExpression(n.parent);
+        const fnName = ts.isConstructorDeclaration(n) ? `${ownerName}.constructor` :
+          declaredName(n.name) ||
           (ts.isVariableDeclaration(n.parent)
-            ? ts.isIdentifier(n.parent.name) ? n.parent.name.text : null
-            : ts.isPropertyAssignment(n.parent)
-              ? ts.isIdentifier(n.parent.name) ? n.parent.name.text : null
-              : null);
+            ? declaredName(n.parent.name)
+            : ts.isPropertyAssignment(n.parent) || ts.isPropertyDeclaration(n.parent)
+              ? declaredName(n.parent.name)
+              : null) || (ts.isFunctionDeclaration(n) && n.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword) ? 'default' : `${anonymousCallback ? 'callback' : 'anonymous'}@${position.line}:${position.column}`);
         if (fnName) {
           const fnId = `${path}#${fnName}:${fns.filter((f) => f.name === fnName).length}`;
           declarations.set(n, fnId);
@@ -181,12 +162,12 @@ export function analyzeFiles(files, name = "My application") {
             if (
               c !== n &&
               (ts.isFunctionDeclaration(c) ||
+                ts.isMethodDeclaration(c) || ts.isConstructorDeclaration(c) || ts.isGetAccessor(c) || ts.isSetAccessor(c) ||
                 ts.isArrowFunction(c) ||
                 ts.isFunctionExpression(c))
             )
               return;
-            if (ts.isCallExpression(c)) {
-              callSites.push([fnId, c]);
+            if (ts.isCallExpression(c) || ts.isNewExpression(c)) {
               const call = ts.isIdentifier(c.expression) ? c.expression.text
                 : ts.isPropertyAccessExpression(c.expression) ? c.expression.name.text : "computed operation";
               calls.push(call);
@@ -230,7 +211,9 @@ export function analyzeFiles(files, name = "My application") {
           const fn = {
             id: fnId,
             name: fnName,
-            title: words(fnName),
+            title: ts.isConstructorDeclaration(n) ? `${ownerName} constructor` : ts.isGetAccessor(n) ? `Read ${words(fnName)}` : ts.isSetAccessor(n) ? `Set ${words(fnName)}` : /^(callback|anonymous)@/.test(fnName) ? `${anonymousCallback ? 'Callback' : 'Anonymous operation'} at line ${position.line}, column ${position.column}` : fnName === 'default' ? 'Default export' : words(fnName),
+            kind: ts.isConstructorDeclaration(n) ? 'constructor' : ts.isGetAccessor(n) || ts.isSetAccessor(n) ? 'accessor' : /^(callback|anonymous)@/.test(fnName) ? 'callback' : 'function',
+            ...position,
             inputs: n.parameters.map(
               (p) =>
                 (ts.isIdentifier(p.name)
@@ -242,19 +225,25 @@ export function analyzeFiles(files, name = "My application") {
             decisions: [...new Set(decisions)],
             effects: [...new Set(effects)],
             calls: [...new Set(calls)],
-            summary: actionText(fnName),
+            summary: ts.isConstructorDeclaration(n) ? `Initializes a ${ownerName} instance.` : /^(callback|anonymous)@/.test(fnName) ? 'Defines an operation whose invocation depends on its caller.' : actionText(fnName),
             raw: n.getText(sf),
             parent: id,
           };
           fns.push(fn);
           evidence.functions.push({id:fnId,...facts});
-          functions.push(fn);
         }
       }
       ts.forEachChild(n, visit);
     };
     visit(sf);
-    if (!fns.length) continue;
+    if (!sf.statements.length) {coverage.emptyFiles.push(path);continue;}
+    const moduleFeatures = [];
+    if (sf.statements.some(ts.isVariableStatement) || sf.statements.some(ts.isClassDeclaration)) moduleFeatures.push('values');
+    if (sf.statements.some(s => ts.isInterfaceDeclaration(s) || ts.isTypeAliasDeclaration(s) || ts.isEnumDeclaration(s))) moduleFeatures.push('types');
+    if (dependencies.records.some(d => d.kind === 're-export')) moduleFeatures.push('re-exports');
+    if (sf.statements.some(s => ts.isExpressionStatement(s) || ts.isIfStatement(s) || ts.isForStatement(s) || ts.isTryStatement(s) || ts.isExportAssignment(s))) moduleFeatures.push('initialization');
+    if (dependencies.records.some(d => d.kind !== 're-export')) moduleFeatures.push('imports');
+    if (!fns.length) evidence.moduleSource = text;
     const baseTitle = words(
       path
         .split("/")
@@ -267,7 +256,7 @@ export function analyzeFiles(files, name = "My application") {
       service: "service",
       repository: "repository",
     }[layer];
-    const title = baseTitle.toLowerCase().includes(suffix)
+    const title = !fns.length ? baseTitle : baseTitle.toLowerCase().includes(suffix)
       ? baseTitle
       : `${baseTitle} ${suffix}`;
     nodes.push({
@@ -280,7 +269,11 @@ export function analyzeFiles(files, name = "My application") {
           : layer === "repository"
             ? "database"
             : "workflow",
-      summary: `${fns.length} operations in ${title.toLowerCase()}. Select a function for its inputs, results, and behavior.`,
+      summary: fns.length ? `${fns.length} operations in ${title.toLowerCase()}. Select a function for its inputs, results, and behavior.`
+        : [moduleFeatures.includes('values') ? 'Declares module values or shared state.' : '', moduleFeatures.includes('types') ? 'Defines shared types.' : '', moduleFeatures.includes('re-exports') ? 'Re-exports other modules.' : '', moduleFeatures.includes('initialization') ? 'Contains module initialization.' : '', moduleFeatures.includes('imports') ? 'Depends on imported modules.' : ''].filter(Boolean).join(' ') || 'Contains module declarations.',
+      moduleFeatures,
+      componentRole: fns.length ? 'implementation' : sf.statements.some(s =>
+        ts.isExpressionStatement(s) || ts.isIfStatement(s) || ts.isIterationStatement(s,false) || ts.isTryStatement(s) || ts.isThrowStatement(s) || ts.isSwitchStatement(s) || ts.isImportDeclaration(s)&&!s.importClause) ? 'startup' : 'support',
       inputs: [...new Set(fns.flatMap((f) => f.inputs))].slice(0, 8),
       outputs: [...new Set(fns.flatMap((f) => f.outputs))].slice(0, 6),
       decisions: [...new Set(fns.flatMap((f) => f.decisions))],
@@ -292,38 +285,13 @@ export function analyzeFiles(files, name = "My application") {
       status: "unchanged",
       fingerprint: text,
     });
-    imports.set(id, moduleImports);
   }
   const edges = [],
     ids = new Set(nodes.map((n) => n.id));
-  const normalize = (p) => {
-    const a = [];
-    for (const s of p.split("/")) {
-      if (s === "..") a.pop();
-      else if (s !== "." && s) a.push(s);
-    }
-    return a.join("/");
-  };
-  for (const [path, imps] of imports)
-    for (const imp of imps) {
-      if (!imp.startsWith(".")) continue;
-      const target = normalize(
-        path.split("/").slice(0, -1).join("/") + "/" + imp,
-      ).replace(/\.[cm]?jsx?$/, "");
-      const found = [
-        target,
-        ...[
-          ".ts",
-          ".tsx",
-          ".js",
-          ".jsx",
-          "/index.ts",
-          "/index.tsx",
-          "/index.js",
-        ].map((ext) => target + ext),
-      ].find((p) => ids.has(p));
+  for (const dependency of coverage.dependencies) {
+      const path = dependency.module, found = dependency.to;
       if (
-        found &&
+        found && ids.has(found) &&
         found !== path &&
         !edges.some((e) => e[0] === path && e[1] === found)
       )
@@ -331,16 +299,20 @@ export function analyzeFiles(files, name = "My application") {
     }
   const entries = nodes.filter((n) => n.layer === "controller");
   const functionEdges = [];
-  for (const [from, call] of callSites) {
-    const target = checker.getResolvedSignature(call)?.declaration;
-    const to = declarations.get(target);
-    if (to && !functionEdges.some(([a, b]) => a === from && b === to))
-      functionEdges.push([from, to]);
-    if(to && ts.isVariableDeclaration(call.parent)) {
-      const file=explanationEvidence.find(e=>e.id===call.getSourceFile().fileName);
-      if(file)(file.callResults ||= []).push({from,to,resultName:call.parent.name.getText(call.getSourceFile())});
+  const functionIds = new Set(declarations.values());
+  for (const {sf, path, records, loaders} of sourceModules) {
+    const result = collectCallRecords(sf, path, checker, declarations, records, loaders);
+    coverage.calls.push(...result.calls);coverage.callbackReferences.push(...result.callbackReferences);
+    for (const {from, to, resultName} of result.callResults) {
+      const file = explanationEvidence.find(e => e.id === path);
+      (file.callResults ||= []).push({from, to, resultName});
     }
+    for (const {from, to} of result.calls) if (to && functionIds.has(from) && !functionEdges.some(([a,b]) => a === from && b === to)) functionEdges.push([from, to]);
   }
+  coverage.sourceFiles = sourceModules.length;coverage.mappedModules = nodes.length;
+  for(const node of nodes)if(node.componentRole==='support'&&coverage.calls.some(c=>c.module===node.id&&c.from===node.id&&!(c.kind==='construct'&&c.status==='external'&&c.reason.startsWith('Runtime-provided')&&['Map','Set','WeakMap','WeakSet','Date','RegExp','Object','Array'].includes(c.label))))node.componentRole='startup';
+  coverage.modules = nodes.map(n => n.id);
+  coverage.counts = coverageCounts(coverage, functionIds.size);
   const roots = entries.length
     ? entries
     : nodes.filter((n) => !edges.some((e) => e[1] === n.id));
@@ -374,6 +346,8 @@ export function analyzeFiles(files, name = "My application") {
     workflows,
     updated: Date.now(),
     errors,
+    analysisWarnings: [...new Set(project.warnings)],
+    coverage,
     fileCount: files.filter((f) => isSource(f.path)).length,
     explanationEvidence,
   };

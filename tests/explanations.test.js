@@ -131,7 +131,7 @@ test('generation prepares callee cards first and supplies them to caller and com
   assert.equal(called[0].selected.functionId,'store.ts#save:0');
   const submit=called.find(c=>c.selected.functionId==='controller.ts#submit:0');
   assert.ok(submit.sourceReviewedCards.some(c=>c.id==='store.ts#save:0'));
-  const component=called.find(c=>c.kind==='component'&&c.selected.id==='controller.ts');
+  const component=called.find(c=>c.kind==='component'&&c.selected.members.includes('controller.ts'));
   assert.ok(component.sourceReviewedCards.some(c=>c.id==='controller.ts#submit:0'));
 });
 test('review output that still contains code is repaired before caching',async()=>{
@@ -169,9 +169,10 @@ test('parser facts distinguish early returns from throws and preserve arithmetic
 });
 test('coarse contexts require all selected operations and cached cards obey evidence guards',async()=>{
   const project=analyzeFiles(fixtureFiles());
-  const jobs=explanationJobs(project),component=jobs.find(j=>j.id==='src/booking.controller.ts');
+  const jobs=explanationJobs(project),component=jobs.find(j=>j.kind==='component'&&j.members.includes('src/booking.controller.ts'));
   const context=jobContext(project,component).context;
-  assert.deepEqual(context.selectedOperations.map(f=>f.title),['Cancel Booking','Create Booking']);
+  assert.ok(context.selectedOperations.some(f=>f.title==='Cancel Booking'));
+  assert.ok(context.selectedOperations.some(f=>f.title==='Create Booking'));
   assert.match(context.requiredCoverage,/do not copy/);
   const fn=jobs.find(j=>j.fn?.name==='createBooking'),evidence=jobContext(project,fn);
   assert.throws(()=>validateEvidenceCard(card,evidence.context),/normalization/);

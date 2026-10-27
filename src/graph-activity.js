@@ -18,8 +18,9 @@ export function flowDepths(items, edges, workflow) {
     (n) =>
       n.status !== "removed" &&
       (!workflow ||
-        workflow.nodes.includes(n.parentId || n.id) ||
-        (n.group && n.members?.some((id) => workflow.nodes.includes(id)))),
+        workflow.nodes.includes(n.sourceModule || n.parentId || n.id) ||
+        (n.isComponent && (n.implementationMembers.length?n.implementationMembers:n.members).some(id=>workflow.nodes.includes(id))) ||
+        (n.group && (n.focusMembers||n.members)?.some((id) => workflow.nodes.includes(id)))),
   );
   const ids = new Set(visible.map((n) => n.id));
   const links = edges.filter(([a, b]) => ids.has(a) && ids.has(b));

@@ -136,8 +136,9 @@ export function focusGraph(graph, workflow) {
   if (!workflow) return { ...graph, hidden: 0 };
   const items = graph.items.filter((n) =>
     n.group
-      ? n.members.some((id) => workflow.nodes.includes(id))
-      : workflow.nodes.includes(n.parentId || n.id),
+      ? (n.focusMembers || n.members).some((id) => workflow.nodes.includes(id))
+      : n.isComponent ? (n.implementationMembers.length ? n.implementationMembers : n.members).some(id=>workflow.nodes.includes(id))
+        : workflow.nodes.includes(n.sourceModule || n.parentId || n.id),
   );
   const ids = new Set(items.map((n) => n.id));
   return {
@@ -236,6 +237,7 @@ function areaName(node, demo) {
   }
   const parts = (node.source || node.id).split("/");
   const folder = parts.slice(0, -1).find((p) => !technical.test(p));
+  if(!folder&&node.isComponent)return node.title;
   const base =
     folder ||
     parts
@@ -264,11 +266,15 @@ export function systemGraph(model) {
         icon: "box",
         group: true,
         members: [],
+        focusMembers: [],
+        componentIds: [],
         functions: [],
         status: "unchanged",
       });
     const group = groups.get(id);
-    group.members.push(n.id);
+    group.members.push(...(n.isComponent ? n.members : [n.id]));
+    group.focusMembers.push(...(n.isComponent ? n.implementationMembers.length ? n.implementationMembers : n.members : [n.id]));
+    group.componentIds.push(n.id);
     if (n.status !== "unchanged") group.status = "modified";
     owners.set(n.id, id);
   }
@@ -286,10 +292,11 @@ export function systemGraph(model) {
   return {
     items: [...groups.values()].map((n) => ({
       ...n,
-      status: n.members.every(id => model.nodes.find(m => m.id === id)?.status === "added") ? "added"
-        : n.members.every(id => model.nodes.find(m => m.id === id)?.status === "removed") ? "removed" : n.status,
-      impact: model.nodes.some(m=>n.members.includes(m.id) && m.impact==="possible") && model.nodes.filter(m=>n.members.includes(m.id) && m.status!=="unchanged").every(m=>m.impact==="possible") ? "possible" : "within",
-      summary: `${n.members.length} components · ${model.kind === "demo" ? "Application area" : "Inferred from paths"}`,
+      members: [...new Set(n.members)], focusMembers: [...new Set(n.focusMembers)],
+      status: n.componentIds.every(id => model.nodes.find(m => m.id === id)?.status === "added") ? "added"
+        : n.componentIds.every(id => model.nodes.find(m => m.id === id)?.status === "removed") ? "removed" : n.status,
+      impact: model.nodes.some(m=>n.componentIds.includes(m.id) && m.impact==="possible") && model.nodes.filter(m=>n.componentIds.includes(m.id) && m.status!=="unchanged").every(m=>m.impact==="possible") ? "possible" : "within",
+      summary: `${n.componentIds.length} components · ${model.kind === "demo" ? "Application area" : "Inferred from paths"}`,
     })),
     edges,
   };

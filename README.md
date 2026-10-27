@@ -4,7 +4,7 @@ Understand AI-generated code through an interactive map of application logic—n
 
 ## Run locally
 
-Requires **Node.js 20+** and npm. No API key is needed to explore the sample or analyze a local project.
+Requires **Node.js 20+** and npm. No API key is needed to explore the sample or inspect a local project's analysis coverage. Opening an imported project's canvas currently requires all AI explanations to be ready.
 
 ```sh
 git clone git@github.com:yuquan1210/show-me-how-it-works.git
@@ -22,7 +22,7 @@ npm run build # Build static files into dist/
 
 ## Explore the app
 
-- Choose **Overview**, **Components**, or **Functions** in the top-right toolbar. Zoom only changes magnification within the chosen level. Each extracted named function has its own selectable node.
+- Choose **Overview**, **Components**, or **Functions** in the top-right toolbar. Zoom only changes magnification within the chosen level. Extracted functions, explicit constructors, methods, and inline callbacks have selectable nodes. Components group implementation code by inferred responsibility. Shared state, types, and re-export files appear in component details as supporting data and declarations, with shared-use labels, rather than separate canvas boxes. Meaningful startup operations remain components. There is no file-level canvas view.
 - Overview boxes group business areas (inferred from paths for imported projects). Components follow left-to-right dependency stages; functions remain individually selectable within component boundaries. Highlighting and inspection preserve positions; changing workflow focus or graph structure can reflow the layout.
 - Select a workflow to focus its graph and collapse unrelated areas into a context box. Choose **All workflows** to restore the overview. Drag to pan and scroll to zoom.
 - Hover or select a connection to trace its complete path and both endpoints while other paths fade.
@@ -30,6 +30,7 @@ npm run build # Build static files into dist/
 - Select a node for a compact behavior card: **Receives**, **Checks & branches**, **Changes**, **Returns**, and **If it fails**. Missing evidence stays explicitly unknown.
 - Click a connection in Components or Functions to inspect its purpose, expected information/results, side effects, and failure uncertainty. Destination inputs are not verified call arguments. Imported purposes are inferred; import-only dependencies are labeled as unknown. Overview connections are not selectable.
 - Choose **Open project** to analyze a local JavaScript/TypeScript folder. Import reads a snapshot. The app does not watch uncommitted file changes.
+- Choose **Review analysis coverage** on the preparation screen before AI generation, or **Analysis coverage** on the canvas. The report separates mapped, external, and unresolved calls, lists dependency records and reasons, and filters by module. Details offer a function-scoped report. Locations are source references, not a raw-code viewer. Callback arguments are recorded separately; passing a callback does not prove it runs. Counts cover supported imported source, not excluded tests/build outputs or runtime test coverage. Try `examples/analysis-coverage` without an AI key.
 - AI explanations use DeepSeek through a local server endpoint. Settings show configuration status, never a key-entry prompt.
 
 ## Canvas workspace
@@ -78,7 +79,11 @@ Explanations are AI inferences, not verified execution. Context is bounded, so l
 
 ## Scope and privacy
 
-The included Commerce app and commit snapshots are curated samples. Imported workflows and labels are inferred from static analysis, not verified runtime traces. Function edges show resolvable calls; dynamic dispatch, framework injection, path aliases, and anonymous callbacks are not fully supported. Tests, configuration, dependencies, and build outputs are excluded.
+Project import also reads `tsconfig.json`, `jsconfig.json`, and their conventionally named variants as local analysis metadata. The nearest root or nested config supplies `baseUrl`, `paths`, and module-resolution settings; relative local `extends` chains work when the inherited files are included in the snapshot. Solution-style references select a uniquely matching referenced configuration using its include/exclude/files membership. Missing, circular, or overlapping references produce warnings instead of silently choosing an arbitrary project. These settings resolve component dependencies, function calls, and supporting type/state context consistently. Configuration files do not become graph components, and their bodies are not sent for AI explanations or included in history exports. Missing or invalid settings produce a **Check project settings** action on the canvas and appear in the coverage report. Package-provided configs, package exports, custom config filenames, and bundler-only aliases are not supported yet. Config include/exclude/files settings select referenced settings but do not hide supported files from the chosen folder snapshot. See the [implementation tasks and review notes](docs/behavior-analysis-tasks.md).
+
+Re-export chains, type-only dependencies, literal dynamic imports, and unshadowed literal `require` dependencies are recorded explicitly. Computed module locations and call targets stay unresolved. Component connections pass through supporting re-export files to the responsibilities they expose. Sharing a type or value does not invent a call between its consumers. Grouping uses domain folders or names with technical suffixes removed, so it remains an inference rather than verified business ownership. Unowned supporting declarations appear together as Shared data & definitions. AI component cards cover the component's implementation and supporting context; supporting files do not require separate visible cards. Explicit constructors and overload implementations are mapped where their bodies can be resolved; implicit accessor invocation, implicit constructors, framework injection, and callback timing are not reconstructed. External package bodies are not loaded. Coverage metadata survives Git-history export; old history files without coverage remain supported. Exports omit module source and function bodies, and imported history cannot supply explanation source evidence. AI context includes bounded dependency and uncertainty records, and changed supporting evidence invalidates cached cards.
+
+The included Commerce app and commit snapshots are curated samples. Imported workflows and labels are inferred from static analysis, not verified runtime traces. Function edges show resolvable calls; dynamic dispatch, framework injection, and anonymous callbacks are not fully supported. Tests, dependencies, and build outputs are excluded; compiler configuration is read only as analysis metadata.
 
 Imported source stays in browser memory until you approve background analysis or submit a question, when selected context passes through the local server to DeepSeek. The API key stays in the server environment. Refreshing clears the imported project, but locally cached explanation text remains until cleared. AI explanations may be inaccurate.
 

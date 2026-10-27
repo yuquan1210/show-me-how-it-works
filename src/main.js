@@ -55,6 +55,10 @@ import {
   Mail,
   HardDrive,
 } from "lucide";
+import { isAnalysisInput } from './source-files.js';
+import { coverageSummary } from './coverage-summary.js';
+import { coverageMarkup } from './coverage-view.js';
+import { componentModel } from './components.js';
 const icons = {
   Network,
   Box,
@@ -210,6 +214,10 @@ function updateProjectGate() {
   if(dialog.querySelector('#gate-start'))dialog.querySelector('#gate-start').onclick=()=>{explanationConsent=true;projectGatePhase='generating';explanationQueue.start();updateProjectGate();};
   if(dialog.querySelector('#gate-check'))dialog.querySelector('#gate-check').onclick=async()=>{await checkAI();updateProjectGate();};
   if(dialog.querySelector('#gate-retry'))dialog.querySelector('#gate-retry').onclick=()=>{if(explanationQueue.enabled)explanationQueue.stop();else{for(const s of explanationQueue.states.values())if(s.status==='error')s.status='queued';explanationQueue.start();}updateProjectGate();};
+  if(!loading&&model.coverage){
+    const button=document.createElement('button');button.className='text-button';button.textContent='Review analysis coverage';
+    button.onclick=()=>showCoverage();dialog.append(button);
+  }
   updateExplanationClock();
 }
 let explanationStorage;
@@ -267,7 +275,7 @@ async function prepareExplanations(resume=false) {
   explanationPreparing=true;updateExplanations();
   await checkAI();
   if(version!==projectLoadVersion)return;
-  await explanationQueue.setProject(sourceModel,explanationJobs(sourceModel,systemGraph(sourceModel).items),aiConfig,{resume});
+  await explanationQueue.setProject(sourceModel,explanationJobs(sourceModel,systemGraph(componentModel(sourceModel)).items),aiConfig,{resume});
   if(version!==projectLoadVersion)return;
   explanationPreparing=false;updateExplanations();
 }
@@ -357,9 +365,9 @@ function syncHistoryState() {
   }
   const commit = historyData?.commits[historyPlayer?.index];
   if (!commit) return;
-  const counts = ["added","modified","removed"].map(status => `${model.nodes.filter(n=>n.status===status).length} ${status}`).join(" · ");
+  const counts = ["added","modified","removed"].map(status => `${componentModel(model).nodes.filter(n=>n.status===status).length} ${status}`).join(" · ");
   $(".canvas-context").childNodes[1].textContent = "";
-  $("#node-count").textContent = `${model.nodes.filter(n=>n.status!=="removed").length} components at this commit`;
+  $("#node-count").textContent = `${componentModel(model).nodes.filter(n=>n.status!=="removed").length} components at this commit`;
   const h = $(".map-header h1");
   h.textContent = historyScope?.name || "All workflows";
   h.title = h.textContent;
@@ -483,8 +491,9 @@ function render() {
   if (selectedEdge && !edgeDetails(model, mode, ...selectedEdge))
     selectedEdge = null;
   const workflow = activeWorkflow();
+  const view=componentModel(model);
   $("#app").innerHTML =
-    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${model.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${model.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
+    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Illustrative workflow flow" : "All core components"}<span class="context-divider"></span><span id="node-count">${view.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${view.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
   if(!historyCommitSelected && model.kind!=='demo'){
     $('.canvas-toolbar').insertAdjacentHTML('afterend','<div class="explanation-progress" id="explanation-progress"></div>');
     const summaryLabel=`Read ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'} explanation`;
@@ -495,6 +504,14 @@ function render() {
     updateExplanations();
   }
   $('.map-header h1').title=$('.map-header h1').textContent;
+  if(model.coverage){
+    $('.map-tools').insertAdjacentHTML('afterbegin','<button class="filter-button" id="analysis-coverage">Analysis coverage</button>');
+    $('#analysis-coverage').onclick=()=>showCoverage();
+  }
+  if(model.analysisWarnings?.length){
+    $('.map-tools').insertAdjacentHTML('afterbegin','<button class="filter-button" id="project-settings-warning">Check project settings</button>');
+    $('#project-settings-warning').onclick=()=>modal(`<h2>Some project settings could not be applied</h2><p>Dependency paths may be incomplete. Check the imported compiler settings and include any local configuration they extend.</p><ul>${model.analysisWarnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul>`);
+  }
   $(".canvas-context").firstElementChild.classList.remove("on");
   $(".canvas-context").childNodes[1].textContent = "";
   bind();
@@ -512,13 +529,14 @@ const layoutPositions = new Map();
 let componentBoundaries = [],
   hiddenContextCount = 0;
 function graphItems() {
+  const view=componentModel(model);
   const graph =
     mode === "overview"
-      ? systemGraph(model)
+      ? systemGraph(view)
       : {
           items:
-            mode === "functions" ? functionItems(model, layers) : model.nodes,
-          edges: mode === "functions" ? model.functionEdges || [] : model.edges,
+            mode === "functions" ? functionItems(view, layers) : view.nodes,
+          edges: mode === "functions" ? model.functionEdges || [] : view.edges,
         };
   const focused = focusGraph(graph, activeWorkflow() || (boundaryScope ? { nodes: boundaryScope.members } : null));
   hiddenContextCount = focused.hidden;
@@ -545,9 +563,10 @@ function graphItems() {
   );
 
   if (historyCommitSelected && historyLayoutModel) {
-    const unionGraph = mode === "overview" ? systemGraph(historyLayoutModel)
-      : {items: mode === "functions" ? functionItems(historyLayoutModel,layers) : historyLayoutModel.nodes,
-         edges: mode === "functions" ? historyLayoutModel.functionEdges : historyLayoutModel.edges};
+    const union=componentModel(historyLayoutModel);
+    const unionGraph = mode === "overview" ? systemGraph(union)
+      : {items: mode === "functions" ? functionItems(union,layers) : union.nodes,
+         edges: mode === "functions" ? union.functionEdges : union.edges};
     const stable = mode === "functions"
       ? functionLayout(unionGraph.items,unionGraph.edges)
       : {items:layoutGraph(unionGraph.items,unionGraph.edges),groups:[]};
@@ -561,6 +580,7 @@ function graphItems() {
 }
 let historyBounds = [];
 function drawGraph() {
+  const view=componentModel(model);
   const items = graphItems(),
     positions = new Map(items.map((n) => [n.id, n]));
   const entityLabel =
@@ -577,15 +597,13 @@ function drawGraph() {
     mode === "overview" ? "Find an area" : mode === "functions" ? "Find a function" : "Find a component",
   );
   $("#empty-search").textContent = `No matching ${entityLabel}`;
-  let edges = mode === "functions" ? model.functionEdges || [] : model.edges;
-  if (mode === "overview") edges = systemGraph(model).edges;
+  let edges = mode === "functions" ? model.functionEdges || [] : view.edges;
+  if (mode === "overview") edges = systemGraph(view).edges;
   const wf = activeWorkflow();
   const related = (n) =>
-    n.group
-      ? model.nodes.some(
-          (m) => n.members.includes(m.id) && (!wf || wf.nodes.includes(m.id)),
-        )
-      : !wf || wf.nodes.includes(n.parentId || n.id);
+    !wf || (n.group ? (n.focusMembers||n.members).some(id=>wf.nodes.includes(id))
+      : n.isComponent ? (n.implementationMembers.length?n.implementationMembers:n.members).some(id=>wf.nodes.includes(id))
+        : wf.nodes.includes(n.sourceModule||n.parentId||n.id));
   const matches = (n) =>
     n.title.toLowerCase().includes(search.toLowerCase()) ||
     (n.parentTitle || "").toLowerCase().includes(search.toLowerCase()) ||
@@ -599,7 +617,7 @@ function drawGraph() {
     edges.filter(
       ([a, b]) =>
         connectionStatus(
-          model,
+          view,
           mode,
           positions.get(a) || {},
           positions.get(b) || {},
@@ -633,7 +651,7 @@ function drawGraph() {
         if (!s || !t) return "";
         const d = routeEdge(s, t, items, { compact: mode === "functions" });
         const active = selectedEdge?.[0] === a && selectedEdge?.[1] === b;
-        const change = connectionStatus(model, mode, s, t);
+        const change = connectionStatus(view, mode, s, t);
         const delay = ((depths.get(a) || 0) * 0.85 - flowElapsed).toFixed(2);
         const motion =
           animateFlow && depths.has(a) && depths.has(b) && change !== "removed"
@@ -647,15 +665,19 @@ function drawGraph() {
       .join("")}</svg>${items
       .map(
         (n) =>
-          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${historyCommitSelected && n.status==="unchanged" ? "history-context" : ""} ${n.impact==="possible" ? "possible-impact" : ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.runtime ? esc(n.type) : n.group ? "BUSINESS AREA" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.impact==="possible" ? "MAY AFFECT" : n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(graphSummary(n))}</p>${
+          `<article class="graph-node ${bright(n) ? "lit" : "dimmed"} ${(n.isFunction ? selectedNode === n.parentId && selectedFn === n.functionIndex : selectedNode === n.id) ? "focused" : ""} ${n.isFunction ? "function-node" : ""} ${n.status || ""} ${historyCommitSelected && n.status==="unchanged" ? "history-context" : ""} ${n.impact==="possible" ? "possible-impact" : ""} ${n.group ? "group-node" : ""}" style="left:${n.x}px;top:${n.y}px" data-node="${esc(n.id)}" tabindex="0" role="button" aria-label="Explore ${esc(n.title)}"><span class="port in"></span><div class="node-top"><span class="node-icon ${n.layer}">${icon(n.icon)}</span><span class="node-type">${n.isFunction ? esc(n.parentTitle) : n.runtime ? esc(n.type) : n.group ? "BUSINESS AREA" : n.isComponent ? n.componentRole === "startup" ? "INITIALIZATION" : "COMPONENT" : n.layer.toUpperCase()}</span>${n.status && n.status !== "unchanged" ? `<span class="change-badge">${n.impact==="possible" ? "MAY AFFECT" : n.status === "added" ? "ADDED" : n.status === "removed" ? "REMOVED" : "UPDATED"}</span>` : icon("arrow-up-right", "node-open")}</div><h2>${esc(n.title)}</h2><p>${esc(graphSummary(n))}</p>${
             n.isFunction
               ? ""
-              : `<div class="node-footer"><span>${icon(n.group ? "box" : "braces")}${n.runtime ? "Inspect boundary" : n.group ? "Focus area" : n.functions.length + " functions"}</span><span class="node-state">${n.status === "modified" ? "Updated" : n.status === "removed" ? "Removed" : n.layer === "external" ? "Connected" : "Mapped"}<b></b></span></div>`
+              : `<div class="node-footer"><span>${icon(n.group ? "box" : "braces")}${n.runtime ? "Inspect boundary" : n.group ? "Focus area" : n.isComponent && !n.functions.length ? "Inspect responsibility" : n.functions.length + " functions"}</span><span class="node-state">${n.status === "modified" ? "Updated" : n.status === "removed" ? "Removed" : n.layer === "external" ? "Connected" : "Mapped"}<b></b></span></div>`
           }<span class="port out"></span></article>`,
       )
       .join("")}`;
   $("#empty-search").hidden = historyCommitSelected && !items.length ? false : !search || items.some(matches);
   if(historyCommitSelected && !items.length) $("#empty-search").textContent = "No mapped core logic at this commit";
+  if(mode==='functions'&&!items.length){
+    $('#empty-search').hidden=false;
+    $('#empty-search').textContent='No mapped functions in this selection. Inspect Components for its data and declarations.';
+  }
   $("#zoom-label").textContent = Math.round(zoom * 100) + "%";
   applyTransform();
   $("#show-context")?.addEventListener("click", () => {
@@ -818,8 +840,9 @@ function renderInspector() {
     if (detail) return renderEdgeInspector(detail);
     selectedEdge = null;
   }
+  const view=componentModel(model);
   const panel = $("#inspector"),
-    n = model.nodes.find((n) => n.id === selectedNode);
+    n = view.nodes.find((n) => n.id === selectedNode);
   if (!n) {
     panel.classList.remove("open");
     return;
@@ -829,10 +852,10 @@ function renderInspector() {
     detail = fn || n,
     title = selectedFn !== null ? n.functions[selectedFn] : n.title;
   const ai = aiCache.get(`${n.id}:${selectedFn}`);
-  panel.innerHTML = `<div class="inspector-header"><span class="eyebrow">${selectedFn !== null ? "FUNCTION BEHAVIOR" : "COMPONENT DETAILS"}</span><button class="icon-button" id="close-inspector" aria-label="Close details">${icon("x")}</button></div><div class="inspector-body"><span class="detail-icon ${n.layer}">${icon(selectedFn !== null ? "braces" : n.icon)}</span><h2>${esc(title)}</h2><span class="detail-type">${selectedFn !== null ? "Function" : layerNames[n.layer]}<span>·</span>${esc(n.evidence)}</span>${historyCommitSelected && historySelection ? `<p class="evidence-note">${n.impact==="possible" ? "May affect this workflow: the changed component is a dependency, but changed behavior is not confirmed on its mapped call paths." : "Scoped to this workflow’s mapped structure. Not verified runtime behavior."}</p>` : ""}<p class="detail-summary">${esc(fn ? fn.summary : selectedFn !== null ? `Part of ${n.title.toLowerCase()}. The sample below describes the containing component; import a project for function-specific details.` : n.summary)}</p>${n.change ? `<div class="change-detail">${icon("git-compare-arrows")}<div><strong>What changed</strong><p>${esc(n.change)}</p></div></div>` : ""}<div class="behavior-card">${behaviorCard(detail, model.kind === "demo").map(([label, values]) => list(label, values.map(plainBehavior))).join("")}</div><p class="evidence-note">${model.kind === "demo" ? "Curated example behavior." : "Structure parsed; intent and side effects inferred."} Not runtime verified.</p>${selectedFn === null ? `<section class="detail-section"><h3>FUNCTIONS <span>${n.functions.length}</span></h3><div class="detail-functions">${n.functions.map((f, i) => `<button class="detail-function" data-inspect-function="${i}">${icon("braces")}${esc(f)}${icon("chevron-right")}</button>`).join("")}</div></section>` : `<button class="back-component" id="back-component">${icon("arrow-left")} Back to component</button>`}<section class="detail-section"><h3>${selectedFn !== null ? "COMPONENT DEPENDENCIES" : "CONNECTED TO"}</h3>${
-    model.edges
+  panel.innerHTML = `<div class="inspector-header"><span class="eyebrow">${selectedFn !== null ? "FUNCTION BEHAVIOR" : "COMPONENT DETAILS"}</span><button class="icon-button" id="close-inspector" aria-label="Close details">${icon("x")}</button></div><div class="inspector-body"><span class="detail-icon ${n.layer}">${icon(selectedFn !== null ? "braces" : n.icon)}</span><h2>${esc(title)}</h2><span class="detail-type">${selectedFn !== null ? "Function" : n.isComponent ? "Component" : layerNames[n.layer]}<span>·</span>${esc(n.evidence)}</span>${historyCommitSelected && historySelection ? `<p class="evidence-note">${n.impact==="possible" ? "May affect this workflow: the changed component is a dependency, but changed behavior is not confirmed on its mapped call paths." : "Scoped to this workflow’s mapped structure. Not verified runtime behavior."}</p>` : ""}<p class="detail-summary">${esc(fn ? fn.summary : selectedFn !== null ? `Part of ${n.title.toLowerCase()}. The sample below describes the containing component; import a project for function-specific details.` : n.summary)}</p>${n.change ? `<div class="change-detail">${icon("git-compare-arrows")}<div><strong>What changed</strong><p>${esc(n.change)}</p></div></div>` : ""}<div class="behavior-card">${behaviorCard(detail, model.kind === "demo").map(([label, values]) => list(label, values.map(plainBehavior))).join("")}</div><p class="evidence-note">${model.kind === "demo" ? "Curated example behavior." : "Structure parsed; intent and side effects inferred."} Not runtime verified.</p>${selectedFn === null ? `<section class="detail-section"><h3>FUNCTIONS <span>${n.functions.length}</span></h3><div class="detail-functions">${n.functions.map((f, i) => `<button class="detail-function" data-inspect-function="${i}">${icon("braces")}${esc(f)}${icon("chevron-right")}</button>`).join("")}</div></section>` : `<button class="back-component" id="back-component">${icon("arrow-left")} Back to component</button>`}<section class="detail-section"><h3>${selectedFn !== null ? "COMPONENT DEPENDENCIES" : "CONNECTED TO"}</h3>${
+    view.edges
       .filter((e) => e[0] === n.id)
-      .map((e) => model.nodes.find((m) => m.id === e[1]))
+      .map((e) => view.nodes.find((m) => m.id === e[1]))
       .filter(Boolean)
       .map(
         (m) =>
@@ -844,6 +867,14 @@ function renderInspector() {
   const structural={purpose:plainBehavior(detail.summary||n.summary),uncertainty:model.kind==='demo'?'Curated sample behavior; not extracted from a repository.':'Static structure only; dynamic behavior may be missing.'};
   behaviorCard(detail,model.kind==='demo').forEach(([,values],i)=>structural[CARD_FIELDS[i+1]]=values.map(plainBehavior).join(' · '));
   const summary=panel.querySelector('.detail-summary');
+  if(model.coverage){
+    const stats=coverageSummary(model.coverage,fn?.sourceModule||fn?.parent||(n.isComponent?n.members:n.id),fn?.id);
+    panel.querySelector('.detail-type').insertAdjacentHTML('afterend',`<p class="evidence-note">${stats.resolvedCalls} mapped operations · ${stats.externalCalls} outside snapshot · ${stats.unresolvedCalls} unresolved</p><button class="text-button" id="component-coverage">Review analysis coverage</button>`);
+    panel.querySelector('#component-coverage').onclick=()=>showCoverage(fn?{moduleId:fn.sourceModule||fn.parent||n.id,functionId:fn.id}:{componentId:n.isComponent?n.id:'',moduleId:n.isComponent?'':n.id});
+  }
+  if(n.supportingFiles?.length){
+    panel.querySelector('.inspector-body').insertAdjacentHTML('beforeend',`<details class="supporting-sources" open><summary>Supporting data & declarations · ${n.supportingFiles.length}</summary><ul>${n.supportingFiles.map(file=>`<li><strong>${esc(file.role)}</strong><p>${esc(file.summary)}</p><small>${esc(file.id)}${file.status!=='unchanged'?` · ${esc(file.status)}`:''}</small>${file.sharedWith.length?`<p>Shared with ${file.sharedWith.map(other=>`<button class="text-button" data-related="${esc(other.id)}">${esc(other.title)}</button>`).join(', ')}</p>`:''}</li>`).join('')}</ul></details>`);
+  }
   summary.insertAdjacentHTML('beforebegin',`<div class="detail-tabs" role="tablist" aria-label="Explanation source"><button role="tab" id="detail-ai-tab" aria-controls="detail-ai-panel" data-detail-tab="ai">AI explanation</button><button role="tab" id="detail-structure-tab" aria-controls="detail-structure-panel" data-detail-tab="structure">Structural analysis</button></div><section id="detail-ai-panel" role="tabpanel" aria-labelledby="detail-ai-tab">${hasGenerated?`<section class="generated-explanation" data-explanation-card="${esc(id)}"></section>`:'<p class="evidence-note">No generated AI card for this sample or historical snapshot. Use Structural analysis to inspect its available behavior.</p>'}</section><section id="detail-structure-panel" role="tabpanel" aria-labelledby="detail-structure-tab"><p class="explanation-label">${model.kind==='demo'?'Curated sample':'Basic structural analysis'}</p>${explanationFields(structural)}</section>`);
   summary.remove();
   const oldBehavior=panel.querySelector('.behavior-card');
@@ -948,7 +979,7 @@ async function askAI(question, n, fn) {
   button.disabled = true;
   try {
     const context = jobContext(model,{id:fn?.id||n.id,title:fn?.title||n.title,
-      kind:fn?'function':'component',members:[n.id],fn}).context;
+      kind:fn?'function':'component',members:fn?[fn.sourceModule||fn.parent||n.id]:n.isComponent?n.members:[n.id],fn}).context;
     if(!context.source.length){const detail=fn||n;context.staticBehavior={evidence:model.kind==='demo'?'Curated sample, not extracted source':'Historical structural labels only',summary:detail.summary,inputs:detail.inputs,outputs:detail.outputs,decisions:detail.decisions,effects:detail.effects};}
     const r = await fetch(
       '/api/ai/chat',
@@ -990,16 +1021,28 @@ async function askAI(question, n, fn) {
     button.disabled = false;
   }
 }
-function modal(content) {
+function showCoverage(options={}) {
+  if(!model.coverage)return;
+  const {markup,page}=coverageMarkup(model,options);
+  modal(markup,{blocking:projectGate,key:'coverage'});
+  const change=patch=>showCoverage({...options,page,...patch});
+  $('#coverage-module')?.addEventListener('change',e=>change({moduleId:e.target.value,functionId:'',page:0}));
+  $('#coverage-category').onchange=e=>change({category:e.target.value,page:0});
+  $('#coverage-prev').onclick=()=>change({page:page-1});
+  $('#coverage-next').onclick=()=>change({page:page+1});
+}
+function modal(content,{blocking=false,key='utility'}={}) {
   const d = $("#modal");
+  if(d.dataset.window!==key)for(const property of ['left','right','top','bottom','transform','width','height'])d.style[property]='';
   d.innerHTML = `<button class="modal-close icon-button" aria-label="Close dialog">${icon("x")}</button>${content}`;
   d.querySelector(".modal-close").onclick = () => d.close();
   d.onclick = (e) => {
     if (e.target === d) d.close();
   };
-  if(!d.open)d.show();
+  if(blocking&&d.open)d.close();
+  if(!d.open){if(blocking)d.showModal();else d.show();}
   d.onkeydown=e=>{if(e.key==='Escape')d.close();};
-  bindFloatingPanel(d,'utility',d.querySelector('h2'));
+  bindFloatingPanel(d,key,d.querySelector('h2'));
   uiIcons();
 }
 let aiStatusMessage='Checking server configuration…';
@@ -1054,8 +1097,7 @@ async function readFolder(handle, prefix = "") {
       )
         files.push(...(await readFolder(entry, path + "/")));
     } else if (
-      /\.[cm]?[jt]sx?$/.test(name) &&
-      !/(test|spec|config)\.[cm]?[jt]sx?$|\.d\.ts$/.test(name)
+      isAnalysisInput(path)
     ) {
       const file = await entry.getFile();
       if (file.size < 600000) files.push({ path, text: await file.text() });
@@ -1071,7 +1113,7 @@ async function installProject(files,name) {
   const {analyzeFiles}=await import('./analyzer.js');
   if(version!==projectLoadVersion)return false;
   const next=analyzeFiles(files,name);
-  if(!next.nodes.length){cancelProjectGate();toast('No supported functions found.');return false;}
+  if(!next.nodes.length){cancelProjectGate();toast('No supported source modules found.');return false;}
   layoutPositions.clear();historyData=null;model=next;aiCache.clear();
   selectedWorkflow=selectedNode=selectedFn=selectedEdge=boundaryScope=null;mode='architecture';
   render();fitGraph();await prepareExplanations(false);
@@ -1140,9 +1182,8 @@ function bind() {
     const files = [...e.target.files];
     if (!files.length) return;
     try {
-      const { isSource } = await import("./analyzer.js");
       const source = files.filter(
-        (f) => isSource(f.webkitRelativePath) && f.size < 600000,
+        (f) => isAnalysisInput(f.webkitRelativePath) && f.size < 600000,
       );
       $("#import-progress") &&
         ($("#import-progress").textContent =

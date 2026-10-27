@@ -10,6 +10,7 @@ export function functionItems(model, layers) {
         id: fn.id,
         parentId: parent.id,
         parentTitle: parent.title,
+        sourceModule: fn.sourceModule || fn.parent || parent.id,
         functionIndex,
         isFunction: true,
         layer: parent.layer,

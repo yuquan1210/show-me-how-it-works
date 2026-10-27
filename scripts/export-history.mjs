@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { resolve, basename } from 'node:path';
 import { createHash } from 'node:crypto';
-import { analyzeFiles, isSource } from '../src/analyzer.js';
+import { analyzeFiles } from '../src/analyzer.js';
+import { isAnalysisInput } from '../src/source-files.js';
 
 const [repoArg, outputArg] = process.argv.slice(2);
 if (!repoArg || !outputArg) {
@@ -24,7 +25,7 @@ try {
     for(const record of git('ls-tree','-r','-z',sha).split('\0').filter(Boolean)) {
       const tab = record.indexOf('\t'), path = record.slice(tab+1);
       const [mode,type,blob] = record.slice(0,tab).split(' ');
-      if(!isSource(path) || type !== 'blob' || !['100644','100755'].includes(mode)) continue;
+      if(!isAnalysisInput(path) || type !== 'blob' || !['100644','100755'].includes(mode)) continue;
       if(Number(git('cat-file','-s',blob)) > 600000) {skipped.push(path);continue;}
       files.push({path,text:git('cat-file','blob',blob)});
     }

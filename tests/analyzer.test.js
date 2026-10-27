@@ -81,11 +81,12 @@ test("unsupported, configuration, dependency, and generated declaration files st
     assert.equal(isSource(f), false, f);
   assert.equal(isSource("src/services/orders.ts"), true);
 });
-test("reports incomplete syntax and handles projects with no functions", () => {
+test("reports incomplete syntax and retains values even without functions", () => {
   assert.equal(
     analyzeFiles([{ path: "empty.ts", text: "const x = 1;" }]).nodes.length,
-    0,
+    1,
   );
+  assert.equal(analyzeFiles([{path:'empty.ts',text:'// empty'}]).nodes.length,0);
   const m = analyzeFiles([
     { path: "broken.ts", text: "export function run( { return 1;" },
   ]);

@@ -32,6 +32,15 @@ test('import validation rejects malformed links and strips raw fields',()=>{
   assert.throws(()=>validateHistory(h));
   assert.throws(()=>validateHistory({format:'show-me-history',version:1,commits:[]}));
 });
+test('history accepts configuration warnings only as a list of text messages',()=>{
+  const h=createDemoHistory();
+  h.commits[0].model.analysisWarnings=['tsconfig.json: inherited settings unavailable.'];
+  assert.deepEqual(validateHistory(h).commits[0].model.analysisWarnings,h.commits[0].model.analysisWarnings);
+  for(const value of ['not a list',{},[{}]]){
+    h.commits[0].model.analysisWarnings=value;
+    assert.throws(()=>validateHistory(h));
+  }
+});
 test('player starts at selected commit, pauses immediately, resumes remaining time and stops at latest',()=>{
   let time=0,job=null,delay=0;const steps=[];
   const p=new CommitPlayer({count:4,onStep:i=>steps.push(i),onState:()=>{},clock:()=>time,schedule:(fn,ms)=>{job=fn;delay=ms;return 1;},cancel:()=>{job=null;}});

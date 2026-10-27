@@ -1,4 +1,5 @@
 import { createDemo, applyDemoChange, applyLargeDemoChange } from './demo.js';
+import { validateCoverage } from './coverage-summary.js';
 
 const clean = model => {
   const copy = structuredClone(model);
@@ -89,10 +90,13 @@ export function validateHistory(value) {
     ids.add(c.sha);
     const m = c.model;
     if(!m || !Array.isArray(m.nodes) || m.nodes.length > 10000 || !Array.isArray(m.workflows) || !Array.isArray(m.errors)) bad();
+    if(m.analysisWarnings !== undefined && !strings(m.analysisWarnings)) bad();
     const nodeIds = new Set(), fnIds = new Set();
     for(const n of m.nodes) {
       if(!text(n.id) || nodeIds.has(n.id) || !text(n.title) || !text(n.summary) || !strings(n.functions) || !Array.isArray(n.functionDetails) || !['controller','service','repository','external'].includes(n.layer)) bad();
       nodeIds.add(n.id);
+      if(n.moduleFeatures !== undefined && !strings(n.moduleFeatures)) bad();
+      if(n.componentRole !== undefined && !['implementation','startup','support'].includes(n.componentRole)) bad();
       for(const f of n.functionDetails) {
         if(!text(f.id) || fnIds.has(f.id) || !text(f.title) || !text(f.summary)) bad();
         fnIds.add(f.id);
@@ -103,6 +107,7 @@ export function validateHistory(value) {
     for(const [field,known] of [['edges',nodeIds],['functionEdges',fnIds]])
       if(!Array.isArray(m[field]) || !m[field].every(e => Array.isArray(e) && e.length === 2 && e.every(id => known.has(id)))) bad();
     if(!m.workflows.every(w => text(w.id) && text(w.name) && strings(w.nodes) && w.nodes.every(id => nodeIds.has(id)))) bad();
+    if(m.coverage !== undefined) validateCoverage(m.coverage, m);
   }
   // Imported files cannot override the sample label or inject source into AI context.
   const result = structuredClone(value);
@@ -110,6 +115,8 @@ export function validateHistory(value) {
   for(const c of result.commits) {
     c.model.kind = 'local';
     c.model.name = String(value.name || 'Imported history').slice(0,200);
+    delete c.model.explanationEvidence;
+    if(c.model.coverage) c.model.coverage = validateCoverage(c.model.coverage, c.model);
     for(const n of c.model.nodes) {
       delete n.raw;
       for(const f of n.functionDetails) delete f.raw;
