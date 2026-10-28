@@ -1,5 +1,7 @@
 # Behavior analysis implementation and review
 
+The ongoing checklist is [TODO.md](TODO.md). The user completed review of the delivered improvements on 2026-10-28; this document retains their implementation and verification record. Future tasks are tracked in that checklist.
+
 Current authorization: the user asked to continue autonomously during their absence, skipping work that needs a human design decision. This supersedes the earlier pause after each task. Keep the existing UI minimal, improve existing features only, and never push commits.
 
 AI configuration and selective generation were delivered in the preceding local commits. This pass implements operation discovery and bounded behavior extraction, improves existing detail/connection cards, and verifies the UI. No saved correction editor, scenario selector, additional canvas level, or remote Git connector is introduced.

@@ -2,6 +2,8 @@
 
 Understand AI-generated code through an interactive map of application logic—not raw source code or lengthy explanations.
 
+Track planned improvements and new features in the [product checklist](docs/TODO.md).
+
 ## Run locally
 
 Requires **Node.js 20+** and npm. The default selective mode opens imported projects without an AI key; generate explanations for individual boxes when needed. Full mode waits for all explanations before opening the canvas.
