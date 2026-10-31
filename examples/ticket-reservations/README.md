@@ -1,6 +1,6 @@
 # Ticket reservations explanation fixture
 
-Open this directory in Show Me How It Works. Every TypeScript file is comment-free. This sample has no external services, credentials, or real payments.
+Open this directory in traceworks. Every TypeScript file is comment-free. This sample has no external services, credentials, or real payments.
 
 To run independently: `npm install`, `npm run build`, then `npm start` (Node.js 20+).
 

@@ -1,4 +1,4 @@
-# show-me-how-it-works
+# traceworks
 
 Understand AI-generated code through an interactive map of application logic—not raw source code or lengthy explanations.
 
