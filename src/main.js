@@ -118,8 +118,8 @@ const icons = {
   Mail,
   HardDrive,
 };
-import { createDemo } from "./demo.js";
-import { frameBounds, zoomStep } from "./camera.js";
+import { createPitchDemo as createDemo, createPitchDemoHistory as createDemoHistory, presentPitchScenario } from "./demo-scenarios.js";
+import { frameAroundPanels, zoomStep } from "./camera.js";
 import { connectionStatus, flowDepths } from "./graph-activity.js";
 import {
   layoutGraph,
@@ -131,7 +131,7 @@ import {
 import { edgeDetails } from "./edge-details.js";
 import { functionItems } from "./function-graph.js";
 import { behaviorCard, plainBehavior, parseBehaviorAnswer } from "./behavior.js";
-import { createDemoHistory, validateHistory, CommitPlayer } from "./history.js";
+import { validateHistory, CommitPlayer } from "./history.js";
 import { workflowCatalog, workflowCommit, workflowHistoryUnion, nextWorkflowCommit } from "./workflow-history.js";
 import { ExplanationQueue, ExplanationCache, explanationJobs, jobContext, explanationProgress, allExplanationsReady, CARD_FIELDS, CARD_LABELS } from './explanations.js';
 import {orderedFiles} from './project-revision.js';
@@ -325,7 +325,7 @@ function toast(message) {
 function activeWorkflow() {
   return historyCommitSelected ? null : model.workflows.find((w) => w.id === selectedWorkflow);
 }
-function visibleSourceModel(){const workflow=activeWorkflow();return workflow?scopeWorkflowModel(model,workflow):model;}
+function visibleSourceModel(){const workflow=activeWorkflow();return workflow?presentPitchScenario(scopeWorkflowModel(model,workflow),workflow):model;}
 function visibleComponents(){return componentModel(visibleSourceModel());}
 function aiAnswerKey(node,fn){return [activeWorkflow()?.id||boundaryScope?.id||'all',node.id,fn?.id||'component'].join(':');}
 function selectedHistoryEntry() { return historyWorkflows.find(w=>w.id===historySelection) || null; }
@@ -335,9 +335,8 @@ function historySidebar() {
 
     <button class="map-link ${!historySelection?'active':''}" data-history-workflow="">${icon("network")} All workflows</button>
     <div class="workflow-list">${historyWorkflows.map(w=>{
-      const version=w.versions[index],first=w.versions.findIndex(Boolean);
-      const label=version ? "Present" : index<first ? "Not created yet" : "Removed";
-      return `<button class="workflow-item ${historySelection===w.id?'selected':''}" data-history-workflow="${w.id}" title="${esc(version?.name || w.name)}" aria-pressed="${historySelection===w.id}"><span class="workflow-copy"><strong>${esc(version?.name || w.name)}</strong><small>${w.uncertain.has(index)?'Identity uncertain':label}</small></span></button>`;
+      const version=w.versions[index];
+      return `<button class="workflow-item ${historySelection===w.id?'selected':''}" data-history-workflow="${w.id}" title="${esc(version?.name || w.name)}" aria-pressed="${historySelection===w.id}"><span class="workflow-copy"><strong>${esc(version?.name || w.name)}</strong></span></button>`;
     }).join('') || '<p class="sidebar-note">Import Git history to explore workflows over time.</p>'}</div>
     </aside>`;
 }
@@ -502,7 +501,7 @@ function header() {
 }
 function sidebar() {
   if(historyCommitSelected)return historySidebar();
-  return `<aside class="sidebar" ${workflowsVisible?'':'hidden'}><div class="window-heading"><h2>Workflows</h2><button class="icon-button hide-workflows" aria-label="Hide workflows">${icon('x')}</button></div><button class="map-link ${!selectedWorkflow?'active':''}" id="all-map">${icon('network')}All workflows</button><div class="workflow-list">${model.workflows.map(w=>`<button class="workflow-item ${w.id===selectedWorkflow?'selected':''}" data-workflow="${esc(w.id)}" title="${esc(w.name)}"><span class="workflow-copy"><strong>${esc(w.name)}</strong><small>${esc(w.trigger?.label || `${w.nodes.length} components`)}${w.uncertain?' · uncertain':''}</small></span></button>`).join('')||'<p class="sidebar-note">No workflows found.</p>'}</div></aside>`;
+  return `<aside class="sidebar" ${workflowsVisible?'':'hidden'}><div class="window-heading"><h2>Workflows</h2><button class="icon-button hide-workflows" aria-label="Hide workflows">${icon('x')}</button></div><button class="map-link ${!selectedWorkflow?'active':''}" id="all-map">${icon('network')}All workflows</button><div class="workflow-list">${model.workflows.map(w=>`<button class="workflow-item ${w.id===selectedWorkflow?'selected':''}" data-workflow="${esc(w.id)}" title="${esc(w.name)}"><span class="workflow-copy"><strong>${esc(w.name)}</strong></span></button>`).join('')||'<p class="sidebar-note">No workflows found.</p>'}</div></aside>`;
 }
 function bindBoardWindows() {
   bindFloatingPanel($('.sidebar'),'workflows',$('.sidebar .window-heading'));
@@ -528,7 +527,7 @@ function render() {
   const workflow = activeWorkflow();
   const view=visibleComponents();
   $("#app").innerHTML =
-    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1></div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Possible workflow calls" : "All core components"}<span class="context-divider"></span><span id="node-count">${view.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${view.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
+    `${header()}<div class="workspace">${sidebar()}<main class="main"><div class="map-header"><div><div class="breadcrumb">${esc(model.name)} ${icon("chevron-right")} ${workflow ? "Workflows" : "Overview"}</div><h1>${workflow ? esc(workflow.name) : boundaryScope ? esc(boundaryScope.title) : "Application map"}<span class="view-label">${model.kind === "demo" ? "SAMPLE" : "LOCAL"}</span></h1>${workflow?.demoScenario ? `<p class="demo-scenario-context"><strong>${esc(workflow.demoScenario.condition)}</strong> ${esc(workflow.demoScenario.outcome)}</p>` : ""}</div><div class="map-tools"><button class="filter-button ${changesOnly ? "enabled" : ""}" id="changes-toggle">${icon("git-compare-arrows")} Changes ${model.nodes.some((n) => n.status !== "unchanged") ? '<span class="notification-dot"></span>' : ""}</button><button class="icon-button" id="help" aria-label="How to use the canvas" title="Canvas guide">${icon("circle-help")}</button></div></div><div class="canvas-toolbar"><div class="view-tabs" role="group" aria-label="Map detail"><button data-level="overview" class="${mode === "overview" ? "active" : ""}">${icon("layers")} Overview</button><button data-level="architecture" class="${mode === "architecture" ? "active" : ""}">${icon("network")} Components</button><button data-level="functions" class="${mode === "functions" ? "active" : ""}">${icon("git-fork")} Functions</button></div><label class="search">${icon("search")}<input id="search" placeholder="Find a component…" value="${esc(search)}" aria-label="Find a component"/><kbd>/</kbd></label></div><div class="canvas ${selectedNode || selectedEdge ? "with-inspector" : ""}" id="canvas"><div class="canvas-context"><span class="live-dot on"></span>${workflow ? "Possible workflow calls" : "All core components"}<span class="context-divider"></span><span id="node-count">${view.nodes.length} components</span></div><div id="world" class="world"></div><div id="empty-search" class="empty-search" hidden>No matching components</div><div class="canvas-bottom"><div class="legend"><span><b class="legend-dot core"></b>Core logic</span><span><b class="legend-dot added"></b>Added</span><span><b class="legend-dot changed"></b>Modified</span><span><b class="legend-dot removed"></b>Removed</span></div><div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">${icon("minus")}</button><span id="zoom-label">100%</span><button id="zoom-in" aria-label="Zoom in">${icon("plus")}</button><span class="control-divider"></span><button id="fit" title="Fit map" aria-label="Fit map">${icon("maximize-2")}</button></div></div><div class="minimap" aria-hidden="true"><div class="mini-grid">${view.nodes.map((n) => `<span class="mini-node ${activeWorkflow()?.nodes.includes(n.id) ? "lit" : ""}"></span>`).join("")}</div><span>OVERVIEW</span></div></div>${historyOpen ? historyTimeline() : ""}<footer class="statusbar"><span>${icon("check-check")} ${model.kind === "demo" ? "Sample map ready" : `Mapped ${model.fileCount} source files`}</span><span>${icon("mouse")} Scroll to zoom <b>·</b> Drag to pan <b>·</b> Click to explore</span><span>${model.kind === "demo" ? "Curated sample" : `${model.errors.length ? "Some files could not be fully parsed" : "Static analysis"}`} ${icon("circle-dot")}</span></footer></main><aside class="inspector ${selectedNode || selectedEdge ? "open" : ""}" id="inspector"></aside></div><div id="toast" role="status"></div><dialog id="modal"></dialog><input type="file" id="folder-input" webkitdirectory multiple hidden/><input type="file" id="history-input" accept=".json,application/json" hidden/>`;
   if(!historyOpen && model.kind!=='demo'){
     $('.canvas-toolbar').insertAdjacentHTML('afterend','<div class="explanation-progress" id="explanation-progress"></div>');
     const summaryLabel=`Read ${selectedWorkflow?'workflow':boundaryScope?'area':'overview'} explanation`;
@@ -812,10 +811,20 @@ function applyTransform() {
   $("#world").style.transform =
     `translate(${pan.x + 38}px,${pan.y + 66}px) scale(${zoom})`;
 }
+function frameVisibleCanvas(bounds, canvas) {
+  const origin = canvas.getBoundingClientRect();
+  const panels = [...document.querySelectorAll('.floating-window, .board-dock, .zoom-controls, .legend')]
+    .filter(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none')
+    .map(el => {
+      const r = el.getBoundingClientRect();
+      return {left:r.left-origin.left, top:r.top-origin.top, right:r.right-origin.left, bottom:r.bottom-origin.top};
+    });
+  return frameAroundPanels(bounds, {width:canvas.clientWidth, height:canvas.clientHeight}, panels);
+}
 function fitGraph() {
   const canvas = $("#canvas");
   if (historyCommitSelected && historyBounds.length) {
-    const framing = frameBounds({left:Math.min(...historyBounds.map(n=>n.x)),top:Math.min(...historyBounds.map(n=>n.y)),right:Math.max(...historyBounds.map(n=>n.x+260)),bottom:Math.max(...historyBounds.map(n=>n.y+200))},{width:canvas.clientWidth,height:canvas.clientHeight});
+    const framing = frameVisibleCanvas({left:Math.min(...historyBounds.map(n=>n.x)),top:Math.min(...historyBounds.map(n=>n.y)),right:Math.max(...historyBounds.map(n=>n.x+260)),bottom:Math.max(...historyBounds.map(n=>n.y+200))},canvas);
     zoom = fittedZoom = framing.scale; relativeZoom = 1; pan = {x:framing.x-38,y:framing.y-66}; applyTransform(); $("#zoom-label").textContent=Math.round(zoom*100)+"%"; return;
   }
   const elements = [
@@ -830,10 +839,7 @@ function fitGraph() {
     right: Math.max(...elements.map((el) => el.offsetLeft + el.offsetWidth)),
     bottom: Math.max(...elements.map((el) => el.offsetTop + el.offsetHeight)),
   };
-  const framing = frameBounds(bounds, {
-    width: canvas.clientWidth,
-    height: canvas.clientHeight,
-  });
+  const framing = frameVisibleCanvas(bounds, canvas);
   zoom = fittedZoom = framing.scale;
   relativeZoom = 1;
   pan = { x: framing.x - 38, y: framing.y - 66 };

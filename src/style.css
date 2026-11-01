@@ -1788,3 +1788,13 @@ dialog input {
 .explanation-skeleton i:last-child { width:60%; }
 @keyframes explanation-pulse { to { opacity:.35; } }
 @media(prefers-reduced-motion:reduce){ .explanation-skeleton i { animation:none; } }
+
+/* Pitch-only scenario context; imported projects retain the existing workflow UI. */
+.demo-scenario-context {
+  max-width: 660px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted, #7f8c99);
+}
+.demo-scenario-context strong { font-weight: 500; }
