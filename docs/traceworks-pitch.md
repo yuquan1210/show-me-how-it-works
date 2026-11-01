@@ -4,7 +4,7 @@
 
 **Event:** From Project to Offering: China Pitch  
 **Format:** 5-minute pitch + 3-minute Q&A  
-**Presentation:** Slides and concept mockups; no video
+**Presentation:** Template-based slides with presenter-supplied Traceworks screenshots; no video
 
 ### Slide index
 
@@ -12,24 +12,44 @@
 | --- | --- | --- |
 | 1 | [Traceworks](#slide-1--traceworks) | Opening question |
 | 2 | [A thousand lines to review](#slide-2--a-thousand-lines-to-review) | Review scenario |
-| 3 | [The change, organized by workflow](#slide-3--the-change-organized-by-workflow) | Traceworks concept |
-| 4 | [A focused review decision](#slide-4--a-focused-review-decision) | Review finding |
-| 5 | [Who’s buying](#slide-5--whos-buying) | Users and buyers |
-| 6 | [Why buy it](#slide-6--why-buy-it) | Value of human review |
-| 7 | [Why Thoughtworks](#slide-7--why-thoughtworks) | Thoughtworks positioning |
-| 8 | [Research first](#slide-8--research-first) | Research and support request |
-| 9 | [Q&A](#slide-9--qa) | Audience discussion |
-| 10 | [Thank you](#slide-10--thank-you) | Closing |
+| 3 | [See the app’s workflows](#slide-3--see-the-apps-workflows) | App context |
+| 4 | [See which workflows changed](#slide-4--see-which-workflows-changed) | Commit impact |
+| 5 | [Follow an affected workflow](#slide-5--follow-an-affected-workflow) | Workflow focus |
+| 6 | [See the changed components](#slide-6--see-the-changed-components) | Component changes |
+| 7 | [Follow the changed functions](#slide-7--follow-the-changed-functions) | Function changes |
+| 8 | [Does express checkout still check stock?](#slide-8--does-express-checkout-still-check-stock) | Review finding |
+| 9 | [Who’s buying](#slide-9--whos-buying) | Users and buyers |
+| 10 | [Why buy it](#slide-10--why-buy-it) | Value of human review |
+| 11 | [Why Thoughtworks](#slide-11--why-thoughtworks) | Thoughtworks positioning |
+| 12 | [Research first](#slide-12--research-first) | Research and support request |
+| 13 | [Q&A](#slide-13--qa) | Audience discussion |
+| 14 | [Thank you](#slide-14--thank-you) | Closing |
 
 ### Visual direction
 
-Follow the template’s dark teal, coral, and light backgrounds. Use coral to highlight important changes and review questions.
+**Use the supplied presentation template for every slide. Keep its existing backgrounds; do not replace, recolor, or cover them with a new full-slide background. Do not invent a new theme.** Follow the template’s layouts, typography, colors, and visual treatments, including its dark teal, coral, and light backgrounds. Use coral to highlight important changes and review questions.
 
-Keep slide text short. Let the spoken script explain the ideas.
+Feel free to add suitable visuals and supporting elements within the template, such as workflow diagrams, product mockups, icons, annotations, and simple charts. Keep these elements consistent with the template and preserve its background and recognizable design.
 
-Slides 2–4 tell one continuous story using the same Commerce app example. Use large, readable mockups with simple reveals. No video.
+Build each slide around one clear message and a suitable visual. Avoid large amounts of text, dense paragraphs, and crowded lists. Use short headlines and brief labels; let the spoken script carry the detail. The on-slide copy below is content guidance and may be shortened or split across slides to improve clarity.
 
-Slides 1–8 form the pitch. Slide 9 opens Q&A, and slide 10 closes the session.
+Make all audience-facing text clear, visible, and easy to follow: use large type, strong contrast against the existing background, generous spacing, and an obvious reading order. Keep diagrams and mockup labels readable at presentation size. Enlarge or simplify visuals rather than shrinking text to fit.
+
+Slides 2–8 tell one continuous story using the same Commerce app example. **The six Traceworks demo screenshots each have their own slide, in this exact order:**
+
+| Slide | Presenter-supplied screenshot |
+| --- | --- |
+| 3 | `all_workflows` |
+| 4 | `select_commit_highlight_workflows` |
+| 5 | `select_affected_workflow` |
+| 6 | `changes_components` |
+| 7 | `changes_functions` |
+| 8 | `changes_function_detail` |
+
+Reserve a large, unobstructed screenshot area on each demo slide within the template. The presenter will insert screenshots later. Leave these areas empty except for the matching filename placeholder; do not create substitute UI mockups or illustrations. Keep screenshot placement consistent across the sequence. No video. Do not combine multiple demo screenshots on one slide.
+The slide index is a starting structure. Feel free to add slides or split a dense slide into several slides when that makes the story easier to follow. **Every added slide must also use the supplied template, with its backgrounds preserved.** Keep the full pitch within five minutes and retain the story’s sequence, followed by Q&A and the closing slide.
+
+Slides 1–12 form the five-minute pitch, slide 13 opens Q&A, and slide 14 closes the session. Keep the six demo slides as a quick, continuous walkthrough; the extra slides divide the visual sequence rather than extend the presentation time. Update the numbering if other slides are added.
 
 ---
 
@@ -46,9 +66,11 @@ Slides 1–8 form the pitch. Slide 9 opens Q&A, and slide 10 closes the session.
 
 ### Design notes
 
-Use the template’s cover layout with plenty of space.
+Use the supplied template’s cover layout and preserve its background, typography, and existing graphic elements. Keep plenty of open space.
 
-Make “traceworks” prominent. Place the central question underneath, highlighting “efficiently and effectively” in coral.
+Make **traceworks** the primary anchor, with the central question directly beneath it. Break the question into short, readable lines and highlight **efficiently and effectively** in coral only where contrast remains strong.
+
+Keep presenter details secondary but legible. The title and question provide the visual focus; no additional illustration is needed.
 
 ### Speaker script
 
@@ -78,11 +100,11 @@ Make “traceworks” prominent. Place the central question underneath, highligh
 
 ### Design notes
 
-Show an illustrative pull request with a long list of changed files and a dense code diff.
+Use an existing template content layout, preserving its background. Give the pull-request illustration most of the content area and place the short feature requirement beside it.
 
-Make the change count readable at a glance. The code provides a sense of scale rather than something the audience needs to read.
+Make **1,000 changed lines** and **Dozens of files** readable at a glance. Suggest the long file list and code diff with simplified rows and diff marks rather than filling the slide with tiny code. Label this as an illustrative pull request; it is not a Traceworks interface.
 
-Show the feature requirement beside the pull request. Reveal “Where do you start?” last.
+Keep **Express checkout** and **Keep the existing stock checks** together as one compact requirement. Reveal **Where do you start?** last, in a clear space outside the illustration. Avoid competing headlines or extra explanatory copy.
 
 ### Speaker script
 
@@ -98,90 +120,147 @@ Show the feature requirement beside the pull request. Reveal “Where do you sta
 
 ---
 
-## Slide 3 — The change, organized by workflow
+## Slide 3 — See the app’s workflows
 
 ### On-slide copy
 
-> **See the change in the context of the app**
->
-> Selected commit: **Add express checkout**
->
-> Selected workflow: **Checkout**
+> **See the app’s workflows**
+
 
 ### Design notes
 
-Give most of the slide to a Traceworks mockup.
+**Screenshot: `all_workflows` — one screenshot on this slide.**
 
-Show a commit selector, a list of workflows, and the selected workflow on the main map.
+Use the supplied template’s content layout and preserve its background and graphic elements. Reserve most of the usable content area (roughly 70–80%, or more where the layout allows) for **[all_workflows]**. Leave this area empty for the presenter to insert the screenshot later; do not recreate the interface or substitute a mockup.
 
-Use three simple reveals:
+Use the screenshot area to introduce the whole Commerce app map. Keep the entry points and distinct workflow paths visible. Add no separate diagram or extra labels around the map.
 
-1. Select **Add express checkout**.
-2. Highlight the workflows the commit touches.
-3. Select **Checkout** and reveal its changed steps.
-
-Fade unrelated content. Label added and modified steps so the meaning does not depend on color alone.
-
-Add a discreet **Concept illustration** label.
+Keep the headline and any caption outside the screenshot area. Use one consistent screenshot frame and placement across slides 3–8 wherever practical. Do not combine screenshots or add a text-heavy explanation.
 
 ### Speaker script
 
-> Well, let’s start by opening Traceworks.
->
-> I select the commit, ‘Add express checkout.’ You can see it highlights the workflows this commit touches.
->
-> Let’s pick ‘Checkout.’
->
-> Here’s the checkout workflow, with the changes highlighted right where they happen. We can see how the new express checkout path fits into the existing process.
->
-> Now we have something much easier to follow. Let’s take a closer look at that new path.
+> Let’s open Traceworks. Here’s the Commerce app, organized by workflow. We can see the different checkout paths alongside the rest of the app.
 
 ---
 
-## Slide 4 — A focused review decision
+## Slide 4 — See which workflows changed
+
+### On-slide copy
+
+> **See which workflows changed**
+
+
+### Design notes
+
+**Screenshot: `select_commit_highlight_workflows` — one screenshot on this slide.**
+
+Use the supplied template’s content layout and preserve its background and graphic elements. Reserve most of the usable content area (roughly 70–80%, or more where the layout allows) for **[select_commit_highlight_workflows]**. Leave this area empty for the presenter to insert the screenshot later; do not recreate the interface or substitute a mockup.
+
+The screenshot should show **Add express checkout** selected and the affected workflows highlighted. Keep both the selected commit and workflow highlights visible. Do not crop away the connection between the commit and its impact.
+
+Keep the headline and any caption outside the screenshot area. Use one consistent screenshot frame and placement across slides 3–8 wherever practical. Do not combine screenshots or add a text-heavy explanation.
+
+### Speaker script
+
+> I select “Add express checkout.” Traceworks highlights the workflows this commit touches, so we can see where to focus our review.
+
+---
+
+## Slide 5 — Follow an affected workflow
+
+### On-slide copy
+
+> **Follow an affected workflow**
+
+
+### Design notes
+
+**Screenshot: `select_affected_workflow` — one screenshot on this slide.**
+
+Use the supplied template’s content layout and preserve its background and graphic elements. Reserve most of the usable content area (roughly 70–80%, or more where the layout allows) for **[select_affected_workflow]**. Leave this area empty for the presenter to insert the screenshot later; do not recreate the interface or substitute a mockup.
+
+The screenshot should show an affected checkout workflow selected and its map in focus. Keep the selected workflow name readable. Use the same screenshot position as the preceding slides so the transition is easy to follow.
+
+Keep the headline and any caption outside the screenshot area. Use one consistent screenshot frame and placement across slides 3–8 wherever practical. Do not combine screenshots or add a text-heavy explanation.
+
+### Speaker script
+
+> Let’s pick an affected checkout workflow. Now we can follow this process without holding the whole app in our heads.
+
+---
+
+## Slide 6 — See the changed components
+
+### On-slide copy
+
+> **See the changed components**
+
+
+### Design notes
+
+**Screenshot: `changes_components` — one screenshot on this slide.**
+
+Use the supplied template’s content layout and preserve its background and graphic elements. Reserve most of the usable content area (roughly 70–80%, or more where the layout allows) for **[changes_components]**. Leave this area empty for the presenter to insert the screenshot later; do not recreate the interface or substitute a mockup.
+
+The screenshot should show the affected workflow at component level, with changed components and connections visible. Preserve enough surrounding context to see where the changes sit. Let the screenshot’s existing change labels carry the explanation.
+
+Keep the headline and any caption outside the screenshot area. Use one consistent screenshot frame and placement across slides 3–8 wherever practical. Do not combine screenshots or add a text-heavy explanation.
+
+### Speaker script
+
+> At component level, we can see which parts changed and how they connect. Let’s look more closely at the checkout change.
+
+---
+
+## Slide 7 — Follow the changed functions
+
+### On-slide copy
+
+> **Follow the changed functions**
+
+
+### Design notes
+
+**Screenshot: `changes_functions` — one screenshot on this slide.**
+
+Use the supplied template’s content layout and preserve its background and graphic elements. Reserve most of the usable content area (roughly 70–80%, or more where the layout allows) for **[changes_functions]**. Leave this area empty for the presenter to insert the screenshot later; do not recreate the interface or substitute a mockup.
+
+The screenshot should show function-level detail for the same workflow, with changed functions and calls visible. Keep the relevant function names readable. Preserve visual continuity with the component map; do not add a second screenshot for comparison.
+
+Keep the headline and any caption outside the screenshot area. Use one consistent screenshot frame and placement across slides 3–8 wherever practical. Do not combine screenshots or add a text-heavy explanation.
+
+### Speaker script
+
+> We can move into the functions and follow the changed calls. Here’s the new express checkout path. What does it actually do?
+
+---
+
+## Slide 8 — Does express checkout still check stock?
 
 ### On-slide copy
 
 > **Does express checkout still check stock?**
->
-> Explanation beside the highlighted change:
->
-> **Express checkout creates the order directly, skipping the stock check.**
->
-> Review question:
+
 >
 > **Could we accept an order for something that’s already sold out?**
 
 ### Design notes
 
-Zoom into the workflow from slide 3. Keep the same visual positions so the audience can follow easily.
+**Screenshot: `changes_function_detail` — one screenshot on this slide.**
 
-Show two paths:
+Use the supplied template’s content layout and preserve its background and graphic elements. Reserve most of the usable content area (roughly 70–80%, or more where the layout allows) for **[changes_function_detail]**. Leave this area empty for the presenter to insert the screenshot later; do not recreate the interface or substitute a mockup.
 
-- **Regular checkout:** Check stock, reserve items, create order.
-- **Express checkout:** Create order directly.
+The screenshot should show the changed function’s expanded Structural analysis window, including both **Before this commit** and **After this commit** columns and their highlighted differences. Give this screenshot the largest practical content area so both columns are readable. Crop out unrelated canvas chrome if needed, keeping the function identity and both comparison headings. Reserve a short caption area outside the screenshot for the review question; reveal it after explaining the difference.
 
-Highlight the express checkout path in coral. Place the explanation beside the skipped step.
-
-Reveal the review question after showing the difference. Avoid extra controls or interface detail.
+Keep the headline and any caption outside the screenshot area. Use one consistent screenshot frame and placement across slides 3–8 wherever practical. Do not combine screenshots or add a text-heavy explanation.
 
 ### Speaker script
 
-> Let’s look at the two paths.
->
-> The regular checkout flow checks that the items are in stock, then reserves them. But the new express checkout flow skips that check and creates the order directly.
->
-> Wait, could we accept an order for something that’s already sold out?
->
-> That’s something to check with our teammate. Express checkout should still check stock and reserve the items.
->
-> And look how we got here. We spotted a potential design problem without digging through a thousand lines of code.
->
-> That’s how Traceworks makes review smoother. We can see what changed, understand what it means, and focus on what needs attention.
+> The before-and-after view makes the difference clear. Regular checkout checks stock and reserves the items. Express checkout creates the order directly, skipping that check. Could we accept an order for something that’s already sold out? That’s a focused question to take back to our teammate, without digging through a thousand lines of code.
 
 ---
 
-## Slide 5 — Who’s buying
+## Slide 9 — Who’s buying
 
 ### On-slide copy
 
@@ -196,11 +275,11 @@ Reveal the review question after showing the difference. Avoid extra controls or
 
 ### Design notes
 
-Use the template’s customer and industry areas, relabeled **Users** and **Buyers**.
+Use an existing template layout with two clear content areas, preserving its background and graphic elements. Label the areas **Users** and **Buyers** and give each one a simple, consistent icon: a developer and a software company.
 
-Place the initial customer focus along the bottom.
+Use one brief description per area. Place **First customers: teams already using AI coding every day** in a short, readable strip or caption below them, within the template’s content area.
 
-If including company names, show Tencent, Atlassian, and Canva as small text examples under Buyers, labeled **Illustrative examples**.
+Keep the distinction between user and buyer visually obvious. Company examples are optional; omit them if they crowd the slide. If included, label Tencent, Atlassian, and Canva as **Illustrative examples**, at a readable size, without implying customer relationships.
 
 ### Speaker script
 
@@ -214,7 +293,7 @@ If including company names, show Tencent, Atlassian, and Canva as small text exa
 
 ---
 
-## Slide 6 — Why buy it
+## Slide 10 — Why buy it
 
 ### On-slide copy
 
@@ -232,9 +311,11 @@ If including company names, show Tencent, Atlassian, and Canva as small text exa
 
 ### Design notes
 
-Use one strong statement at the top and three short benefit sections beneath it.
+Use the template’s existing title and three-part content layout, or the closest available layout, with its background unchanged.
 
-Keep the layout flat and spacious. Highlight **Human judgment still matters** in coral.
+Put **AI speeds up coding. Human judgment still matters.** at the top. Highlight **Human judgment still matters** in coral where readable.
+
+Represent the three benefits with matching simple icons and short labels: less review effort, more effective review, and greater confidence. Use at most one short supporting line per benefit. Keep the sections spacious and equal in visual weight; let the speaker explain the detail. Do not add unsupported metrics or charts.
 
 ### Speaker script
 
@@ -248,7 +329,7 @@ Keep the layout flat and spacious. Highlight **Human judgment still matters** in
 
 ---
 
-## Slide 7 — Why Thoughtworks
+## Slide 11 — Why Thoughtworks
 
 ### On-slide copy
 
@@ -262,11 +343,11 @@ Keep the layout flat and spacious. Highlight **Human judgment still matters** in
 
 ### Design notes
 
-Keep the template’s title treatment.
+Use an existing template content layout and retain its title treatment and background. Keep the headline prominent, with deliberate line breaks so it remains readable.
 
-Make the three statements prominent, with generous spacing. Place the Traceworks statement underneath as the concrete example.
+Show the three strengths as a simple group of matching icons and short labels: modern technology, strong engineering practices, and responsibility for quality. Use coral to emphasize **Responsibility for quality**, with sufficient contrast.
 
-Use coral to emphasize **Responsibility for quality**.
+Place **Traceworks: human review organized around workflows** as a brief application of those strengths beneath the group. Avoid extra paragraphs or decorative elements that compete with the message.
 
 ### Speaker script
 
@@ -284,7 +365,7 @@ Use coral to emphasize **Responsibility for quality**.
 
 ---
 
-## Slide 8 — Research first
+## Slide 12 — Research first
 
 ### On-slide copy
 
@@ -303,16 +384,13 @@ Use coral to emphasize **Responsibility for quality**.
 
 ### Design notes
 
-Use the template’s main area for the research direction and its broader value.
+Use the template’s existing content areas with the background preserved. Give the research direction the main area and make **Support needed** a clearly separated, prominent request beside or below it, using the closest suitable template layout.
 
-Put the support request in the right-hand column.
+Show a simple two-step visual: **Research real projects → Share what we learn**. Pair each step with a consistent icon and no more than one short supporting line. Keep the support request to two readable items: connections to client teams and time with developers.
 
-On the final click, replace the body content with the closing line, retaining the Traceworks name:
+End with **Keep the speed of AI coding. Keep sight of what you’re building.** as a separate reveal that replaces only the body text and added content, preserving the template background and title treatment. If a separate closing beat is clearer, add a slide using an existing template layout. Do not squeeze the research plan, request, and closing line onto one crowded slide.
 
-**Keep the speed of AI coding.  
-Keep sight of what you’re building.**
-
-Pause here before moving to Q&A.
+Pause on the closing line before moving to Q&A.
 
 ### Speaker script
 
@@ -332,7 +410,7 @@ Pause here before moving to Q&A.
 
 ---
 
-## Slide 9 — Q&A
+## Slide 13 — Q&A
 
 ### On-slide copy
 
@@ -340,9 +418,9 @@ Pause here before moving to Q&A.
 
 ### Design notes
 
-Keep the template’s simple Q&A layout.
+Use the supplied template’s Q&A layout with its background and graphic elements unchanged. Make **Q&A** the single visual focus, with generous open space; no additional illustration or body text is needed.
 
-Have slides 3 and 4 ready to revisit if someone asks how the review experience works.
+Keep demo slides 3–8 ready to revisit if someone asks how the review experience works, especially slide 4 for commit impact and slide 8 for the before-and-after function detail.
 
 ### Transition
 
@@ -350,7 +428,7 @@ Have slides 3 and 4 ready to revisit if someone asks how the review experience w
 
 ---
 
-## Slide 10 — Thank you
+## Slide 14 — Thank you
 
 ### On-slide copy
 
@@ -363,9 +441,11 @@ Have slides 3 and 4 ready to revisit if someone asks how the review experience w
 
 ### Design notes
 
-Return to the cover’s dark teal background.
+Use the supplied template’s closing layout, or reuse its cover layout, preserving that layout’s original background and graphic elements. Do not create a replacement background or closing theme.
 
-Keep the product name and closing line large. Place contact details discreetly at the bottom.
+Keep **traceworks** and the closing line large, with clear separation and readable line breaks. Place presenter and contact details in the template’s secondary text area, smaller but still legible.
+
+Keep the closing slide uncluttered; the product name and closing message are the visual focus.
 
 ### Closing
 
