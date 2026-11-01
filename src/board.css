@@ -206,3 +206,68 @@ button:focus-visible,input:focus-visible,select:focus-visible { outline:2px soli
   .canvas-bottom { left:10px; right:10px; bottom:14px; justify-content:flex-end; }
   .zoom-controls { margin-left:0; }
 }
+
+.sidebar .workflow-item.commit-affected { background:#fff0e9; border-color:#df9b80; }
+.sidebar .workflow-item.commit-affected strong { color:#9b4f36; }
+.workflow-impact-label { display:block; margin-top:5px; color:#a75439; font-size:11px; }
+.demo-workflow-lane.commit-affected { border-color:#df9174; border-left-color:#da7959; background:#fff2eb; box-shadow:0 0 0 1px #da795930; }
+.demo-workflow-lane.commit-affected .demo-lane-title small { color:#a44f33; font-weight:600; }
+.demo-workflow-lane.commit-unaffected { opacity:.4; }
+
+.history-timeline .commit-item.new-commit { background:#fff0e9; border:2px solid #d48165; }
+.history-timeline .commit-item.new-commit strong { color:#8c402b; }
+.new-commit-badge { display:inline-block; margin-top:5px; padding:2px 6px; border-radius:4px; background:#f8d9cb; color:#873c28; font-size:10px; font-weight:600; }
+.history-timeline .commit-item.new-commit.current { box-shadow:inset 0 0 0 1px #ba6246; }
+.demo-workflow-lane:hover,.demo-workflow-lane:focus-visible { color:#294139; opacity:1; }
+.sidebar .workflow-item:hover,.sidebar .workflow-item:focus-visible { color:#294139; }
+.sidebar .map-link:hover,.sidebar .map-link:focus-visible { color:#245d44; }
+
+.structural-diff { margin:18px 0; color:#34483e; }
+.diff-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.diff-heading h3 { margin:0; font-size:14px; color:#294537; }
+.diff-heading > span { color:#8f4935; font-size:11px; font-weight:600; }
+.diff-caption,.diff-absent { color:#697c70; font-size:11px; line-height:1.6; }
+.diff-field { margin:16px 0; border:1px solid #dfe6e1; border-radius:8px; overflow:hidden; }
+.diff-field h4 { padding:9px 12px; margin:0; background:#f4f7f5; color:#41594b; font-size:12px; }
+.diff-row { display:flex; gap:9px; padding:10px 12px; border-top:1px solid #e2e7e3; }
+.diff-before { background:#fff0ed; color:#7d392c; }
+.diff-after { background:#edf8ef; color:#245c36; }
+.diff-sign { flex:0 0 12px; font:bold 16px monospace; }
+.diff-row small { display:block; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+.diff-row p { margin:4px 0 0; font-size:12px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
+.diff-row del { background:#f8cfc5; text-decoration:line-through; text-decoration-color:#b25b48; border-radius:2px; }
+.diff-row ins { background:#c9ebd1; text-decoration:none; font-weight:600; border-radius:2px; }
+.diff-absent { padding:0 12px; }
+.diff-no-change { font-size:12px; line-height:1.7; background:#f4f7f5; padding:12px; border-radius:8px; }
+.diff-current-details { margin:18px 0; }
+.diff-current-details summary { color:#42614e; cursor:pointer; font-size:12px; }
+
+/* A single scroll surface keeps matching fields aligned across both revisions. */
+.inspector.open.structural-comparison-open {
+  width:min(960px,calc(100vw - 36px))!important;
+  height:calc(100dvh - 180px)!important;
+  max-height:calc(100dvh - 36px);
+  left:auto!important; right:18px!important; top:150px!important;
+  bottom:auto!important; transform:none!important;
+}
+.diff-table-scroll { overflow-x:auto; border:1px solid #dfe6e1; border-radius:8px; }
+.diff-table { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); min-width:580px; }
+.diff-column-heading { padding:14px; background:#f0f5f2; color:#304c3b; border-bottom:1px solid #d6e1da; }
+.diff-column-heading + .diff-column-heading { border-left:1px solid #d6e1da; }
+.diff-column-heading strong,.diff-column-heading small { display:block; }
+.diff-column-heading strong { font-size:14px; }
+.diff-column-heading small { margin-top:4px; font-size:11px; color:#61776a; }
+.diff-table .diff-field { grid-column:1 / -1; margin:0; border:0; border-radius:0; border-bottom:1px solid #dfe6e1; }
+.diff-table .diff-field:last-child { border-bottom:0; }
+.diff-table .diff-field h4 { display:flex; justify-content:space-between; border-bottom:1px solid #e3e9e5; }
+.diff-field h4 > span { font-size:10px; color:#975038; font-weight:500; }
+.diff-field-columns { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.diff-cell { min-width:0; }
+.diff-cell + .diff-cell { border-left:1px solid #dfe6e1; }
+.diff-table .diff-row { border-top:0; }
+.diff-table .diff-row p { margin:0; }
+.diff-context { background:#fff; color:#4c6254; }
+@media (max-width:700px) {
+  .inspector.open.structural-comparison-open { right:12px!important; top:100px!important; width:calc(100vw - 24px)!important; min-width:0; height:calc(100dvh - 124px)!important; max-height:calc(100dvh - 124px); }
+}
+

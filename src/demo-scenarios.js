@@ -97,3 +97,27 @@ export function presentPitchScenario(model, workflow) {
     return {...node, functionDetails, functions: functionDetails.map(fn => fn.title)};
   })};
 }
+
+// Reveal this sample commit on refresh for the pitch's review sequence.
+export function revealExpressCheckout(history) {
+  if (history.kind !== 'demo' || history.commits.some(c => c.sha === 'sample-express-checkout')) return history;
+  const model = structuredClone(history.commits.at(-1).model);
+  const controller = model.nodes.find(n => n.id === 'order-api');
+  const orders = model.nodes.find(n => n.id === 'orders');
+  const express = {
+    id:'orders#express', title:'Create express order',
+    summary:'Creates an order directly from the saved cart, skipping stock checks and reservations.',
+    inputs:['Customer', 'Saved cart'], outputs:['Created order'],
+    decisions:['Express checkout → create order directly'], effects:['Writes an order without reserving stock'],
+  };
+  orders.functionDetails.push(express);
+  orders.functions.push(express.title);
+  orders.summary += ' Express checkout creates an order directly without checking or reserving stock.';
+  controller.functionDetails[0].decisions.push('Express checkout → create order directly');
+  model.functionEdges.push(['order-api#0',express.id], [express.id,'order-store#0']);
+  model.workflows.find(w => w.id === 'checkout').functionIds.push(express.id);
+  return {...history, commits:[...history.commits, {
+    sha:'sample-express-checkout', message:'Add express checkout', date:'2026-09-07T09:00:00Z',
+    demoAffectedWorkflows:['checkout','checkout-out-of-stock','checkout-payment-declined'], model,
+  }]};
+}

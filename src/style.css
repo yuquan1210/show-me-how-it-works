@@ -1798,3 +1798,28 @@ dialog input {
   color: var(--text-muted, #7f8c99);
 }
 .demo-scenario-context strong { font-weight: 500; }
+
+.demo-map-note { position:absolute; left:24px; top:5px; color:#8e9eaa; font-size:13px; }
+.demo-map-wires { position:absolute; inset:0; pointer-events:none; fill:none; stroke-width:2; opacity:.65; }
+.demo-controller { position:absolute; width:200px; min-height:80px; box-sizing:border-box; padding:16px; background:#182630; border:1px solid var(--lane-color); border-radius:12px; display:flex; flex-direction:column; justify-content:center; gap:10px; }
+.demo-controller small { font-size:10px; color:var(--lane-color); letter-spacing:.6px; }
+.demo-controller strong { font-size:17px; color:#e7edf1; }
+.demo-workflow-lane { position:absolute; width:960px; height:100px; box-sizing:border-box; text-align:left; padding:12px 18px; background:#18232c; color:#dbe4ea; border:1px solid #34424d; border-left:3px solid var(--lane-color); border-radius:10px; cursor:pointer; display:flex; flex-direction:column; gap:9px; transition:opacity .15s,background .15s; }
+.demo-workflow-lane:hover,.demo-workflow-lane:focus-visible { background:#23333f; outline:2px solid var(--lane-color); outline-offset:3px; }
+.demo-lane-title { display:flex; align-items:center; gap:10px; }
+.demo-lane-title b { color:var(--lane-color); font-size:11px; border:1px solid var(--lane-color); border-radius:50%; width:19px; height:19px; display:grid; place-items:center; }
+.demo-lane-title strong { font-size:14px; }
+.demo-lane-title small { margin-left:auto; color:#9dacb8; font-size:11px; }
+.demo-lane-steps { display:flex; gap:10px; font-size:13px; }
+.demo-lane-steps i { font-style:normal; color:var(--lane-color); margin-right:10px; }
+.demo-lane-outcome { font-size:11px; color:#94a5b2; }
+.demo-workflow-lane.search-muted { opacity:.25; }
+/* Match the light Commerce canvas while keeping path families recognizable. */
+.demo-controller { background:#f3f8f7; }
+.demo-controller strong { color:#253f39; }
+.demo-controller small { color:#52766b; }
+.demo-workflow-lane { background:#fff; color:#294139; border-top-color:#dce6e1; border-right-color:#dce6e1; border-bottom-color:#dce6e1; align-items:stretch; box-shadow:0 2px 6px #203d3010; }
+.demo-workflow-lane:hover,.demo-workflow-lane:focus-visible { background:#f3f8f6; }
+.demo-lane-title small,.demo-lane-outcome { color:#64786f; }
+.demo-map-note { color:#6a7d75; }
+.demo-lane-title,.demo-lane-steps,.demo-lane-outcome { text-align:left; justify-content:flex-start; }
